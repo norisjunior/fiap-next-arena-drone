@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Turno</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">Controle do turno</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container container-wide">
+    <h1>Turno</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <section class="card turno-painel">
+        <div id="avisoSemSessao" class="alerta erro" hidden>
+            Nenhuma sessão preparada. Escolha o grupo em <a href="/avaliar">Avaliar</a>.
+        </div>
+        <div id="avisoCamera" class="alerta erro" hidden></div>
+
+        <div class="turno-topo">
+            <div>
+                <span class="eyebrow">Grupo</span>
+                <h2 id="nomeGrupo">{{ job_ativo.nome_exibir or "—" }}</h2>
+                <p id="mensagemTurno">{{ job_ativo.mensagem }}</p>
+            </div>
+            <div class="turno-cronometro" id="cronometro">--:--</div>
+        </div>
+
+        <button id="btnStart" class="turno-start" type="button" disabled>START</button>
+
+        <div>
+            <span class="eyebrow">Classes do desafio · <span id="resumoClasses">0 detectadas · 0 detecções</span></span>
+            <div class="turno-classes" id="classesTurno"></div>
+        </div>
+
+        <div class="arena-links">
+            <a class="botao secundario" href="/telao" target="next_telao">Abrir telão</a>
+        </div>
+
+        <p class="turno-nota">
+            Conta como detecção todo frame com confidence a partir de {{ "%.0f"|format(confidence_minima * 100) }}%.
+            Inferência em <strong>{{ nome_dispositivo }}</strong>{% if not usando_gpu %} — a GPU não está sendo usada{% endif %}.
+        </p>
+    </section>
+
+    <section class="card zona-risco">
+        <h2>Antes do evento — limpar a competição</h2>
+        <p>
+            Apaga os dados de ensaio para a competição começar do zero.
+            Um backup do banco é gravado automaticamente em <code>dados/backups/</code>
+            antes de qualquer coisa ser apagada.
+        </p>
+        <form method="POST" action="/arena/reset"
+              onsubmit="return confirm('Confirma a limpeza? Um backup sera gravado antes.')">
+            <label>O que apagar:
+                <select name="escopo">
+                    <option value="resultados">Só os resultados — mantém grupos e modelos cadastrados</option>
+                    <option value="tudo">Tudo — apaga também os grupos cadastrados</option>
+                </select>
+            </label>
+            <label>Digite <strong>LIMPAR</strong> para confirmar:
+                <input type="text" name="confirmacao" placeholder="LIMPAR" autocomplete="off" required>
+            </label>
+            <button class="erro" type="submit">Limpar competição</button>
+        </form>
+        <p><small>Não funciona com um turno em andamento. As imagens já salvas em disco não são apagadas.</small></p>
+    </section>
+</div>
+
+<script>
+    const btnStart = document.getElementById("btnStart");
+    const cronometro = document.getElementById("cronometro");
+    const nomeGrupo = document.getElementById("nomeGrupo");
+    const mensagemTurno = document.getElementById("mensagemTurno");
+    const classesTurno = document.getElementById("classesTurno");
+    const resumoClasses = document.getElementById("resumoClasses");
+    const avisoSemSessao = document.getElementById("avisoSemSessao");
+    const avisoCamera = document.getElementById("avisoCamera");
+
+    function formatarTempo(segundos) {
+        const total = Math.max(0, Number(segundos || 0));
+        const min = Math.floor(total / 60).toString().padStart(2, "0");
+        const sec = Math.floor(total % 60).toString().padStart(2, "0");
+        return `${min}:${sec}`;
+    }
+
+    function desenhar(estado) {
+        const status = estado.status || "sem_sessao";
+        avisoSemSessao.hidden = status !== "sem_sessao";
+
+        const cameraCaiu = status === "rodando" && estado.camera_ok === false;
+        avisoCamera.hidden = !cameraCaiu;
+        if (cameraCaiu) avisoCamera.textContent = estado.camera_mensagem;
+
+        nomeGrupo.textContent = estado.nome_exibir
+            ? `${estado.nome_exibir}${estado.turma ? " · " + estado.turma : ""}`
+            : "—";
+        mensagemTurno.textContent = estado.mensagem || "";
+        cronometro.textContent = status === "sem_sessao" ? "--:--" : formatarTempo(estado.tempo_restante_s);
+        cronometro.className = `turno-cronometro ${status}`;
+
+        btnStart.disabled = status !== "preparada";
+        btnStart.textContent = status === "rodando" || status === "carregando" ? "EM ANDAMENTO" : "START";
+
+        const classes = estado.classes || [];
+        const detectadas = classes.filter(item => item.deteccoes > 0);
+        const total = classes.reduce((soma, item) => soma + item.deteccoes, 0);
+        resumoClasses.textContent = `${detectadas.length}/${classes.length} detectadas · ${total} detecções`;
+        classesTurno.innerHTML = classes.map(item => `
+            <div class="turno-classe ${item.deteccoes > 0 ? "ok" : ""}">
+                <strong>${item.classe}</strong>
+                <span>${item.deteccoes} det. · ${item.deteccoes > 0 ? (item.melhor_conf * 100).toFixed(1) + "%" : "—"}</span>
+            </div>`).join("");
+    }
+
+    btnStart.addEventListener("click", async () => {
+        btnStart.disabled = true;
+        const resposta = await fetch("/telao/start", { method: "POST" });
+        const dados = await resposta.json();
+        mensagemTurno.textContent = dados.mensagem;
+    });
+
+    async function sincronizar() {
+        try {
+            const resposta = await fetch("/telao/status");
+            desenhar(await resposta.json());
+        } catch (erro) {
+            mensagemTurno.textContent = "Sem contato com o app.";
+        }
+    }
+
+    sincronizar();
+    setInterval(sincronizar, 500);
+</script>
+
+</body>
+</html>

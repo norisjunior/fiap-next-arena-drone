@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Desafio</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container">
+    <h1>Cadastro do Desafio</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card">
+        <h2>Evento</h2>
+        <form method="POST">
+            <label>Nome do evento:
+                <input type="text" name="nome_evento" required value="{{ desafio.nome_evento }}">
+            </label>
+            <label>Subtítulo:
+                <input type="text" name="subtitulo" value="{{ desafio.subtitulo }}" placeholder="ex: Detecção de EPI">
+            </label>
+            <label>Duração do turno de cada grupo (segundos):
+                <input type="number" name="duracao_s" min="10" max="600" required value="{{ desafio.duracao_s }}">
+            </label>
+            <label>Classes esperadas — uma por linha, na ordem do <code>data.yaml</code>:
+                <textarea name="classes" rows="10" required placeholder="capacete&#10;oculos&#10;luva">{{ classes|join('\n') }}</textarea>
+            </label>
+            <button type="submit">Salvar desafio</button>
+        </form>
+        <p>
+            <small>
+                Os nomes são gravados em minúsculas, sem acento e sem espaço.
+                Só essas classes pontuam: outra classe que o modelo detectar aparece no telão, mas não conta.
+                Troque as classes antes de receber os modelos, porque o cadastro recusa o <code>best.pt</code> que não bater com a lista.
+            </small>
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>Arquivo para os grupos</h2>
+        <p>
+            As classes ficam em <code>{{ arquivo_oficial }}</code>, o mesmo arquivo que o autoteste
+            do aluno usa. Salvar o desafio regrava esse arquivo.
+        </p>
+        {% if classes %}
+        <p><a class="botao" href="{{ url_for('baixar_classes_oficiais') }}">Baixar classes-oficiais.txt</a></p>
+        {% else %}
+        <p>Nenhuma classe cadastrada ainda.</p>
+        {% endif %}
+    </div>
+</div>
+
+</body>
+</html>

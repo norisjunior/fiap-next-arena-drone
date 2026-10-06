@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Avaliar Modelo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container">
+    <h1>Avaliar Modelo</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card">
+        <h2>Avaliação por câmera HTTP</h2>
+        <p>
+            Inicie o ESP32-CAM com o firmware HTTP da etapa 5 e informe a URL abaixo.
+            A aplicação prepara a sessão no telão. O <strong>START</strong> fica na tela
+            <a href="/arena-admin">Turno</a>.
+        </p>
+    </div>
+
+    {% if job_ativo.status != "sem_sessao" %}
+    <div class="card">
+        <h2>Sessão no telão</h2>
+        <p>
+            {{ job_ativo.nome_exibir }}{% if job_ativo.turma %} · {{ job_ativo.turma }}{% endif %}
+            · Rodada {{ job_ativo.rodada }} · {{ job_ativo.mensagem }}
+        </p>
+        <p>
+            <a class="botao" href="/arena-admin">Abrir Turno</a>
+            <a class="botao secundario" href="/telao" target="next_telao">Abrir telão</a>
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Selecionar grupo para avaliar</h2>
+        {% if dados.grupos %}
+        <form method="POST">
+            <label>Grupo:
+                <select name="grupo" required>
+                    <option value="">-- selecione --</option>
+                    {% for grupo in dados.grupos %}
+                    <option value="{{ grupo.grupo }}">
+                        {{ grupo.nome_exibir or grupo.grupo }} ({{ grupo.turma }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>URL da câmera:
+                <input type="text" name="camera_url" required placeholder="http://192.168.0.100/capture">
+            </label>
+            <button type="submit">Preparar sessão no telão</button>
+        </form>
+        <p><small>Turno de {{ desafio.duracao_s }} segundos, definido em <a href="/desafio">Desafio</a>. O tempo só começa no START.</small></p>
+        {% else %}
+        <p>Nenhum grupo cadastrado. <a href="/">Cadastre um grupo primeiro.</a></p>
+        {% endif %}
+    </div>
+</div>
+
+{% if abrir_telao %}
+<script>
+    window.open("/telao", "next_telao", "popup=yes,width=1440,height=900");
+</script>
+{% endif %}
+
+</body>
+</html>

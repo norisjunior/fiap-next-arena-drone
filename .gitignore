@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- NEXT 2026: app de avaliacao ---
+appProfNextEnv/
+__pycache__/
+dados/avaliacao.sqlite
+dados/backups/
+imagens_anotadas/*
+!imagens_anotadas/.gitkeep
+modelos_recebidos/*
+!modelos_recebidos/.gitkeep
+.env

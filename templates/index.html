@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Cadastro de Grupo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container">
+    <h1>{{ desafio.nome_evento }} — Cadastro de Grupo</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card">
+        <h2>Cadastrar grupo e enviar modelo</h2>
+        <form id="formCadastro" method="POST" enctype="multipart/form-data">
+            <label>Nome do grupo:
+                <input type="text" name="nome_grupo" required placeholder="ex: Grupo Alpha">
+            </label>
+            <label>Turma:
+                <input type="text" name="turma" placeholder="ex: 1TIA">
+            </label>
+            <label>Integrantes:
+                <input type="text" name="integrantes" placeholder="Aluno 1, Aluno 2, Aluno 3">
+            </label>
+            <label>Arquivo best.pt:
+                <input id="arquivoModelo" type="file" name="modelo" accept=".pt" required>
+            </label>
+            <div id="analiseModelo" class="analise-modelo vazio">
+                Selecione o <code>best.pt</code> para validar o carregamento e conferir as classes do modelo.
+            </div>
+            <button id="btnCadastrar" type="submit" disabled>Cadastrar grupo</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Grupos cadastrados</h2>
+        {% if dados.grupos %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Grupo</th>
+                    <th>Turma</th>
+                    <th>Integrantes</th>
+                    <th>Modelo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for grupo in dados.grupos %}
+                <tr>
+                    <td>{{ grupo.nome_exibir or grupo.grupo }}</td>
+                    <td>{{ grupo.turma }}</td>
+                    <td>{{ grupo.integrantes }}</td>
+                    <td>{{ grupo.modelo }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>Nenhum grupo cadastrado ainda.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    const arquivoModelo = document.getElementById("arquivoModelo");
+    const analiseModelo = document.getElementById("analiseModelo");
+    const btnCadastrar = document.getElementById("btnCadastrar");
+
+    function mostrarAnalise(classe, conteudo) {
+        analiseModelo.className = `analise-modelo ${classe}`;
+        analiseModelo.innerHTML = conteudo;
+    }
+
+    arquivoModelo.addEventListener("change", async () => {
+        btnCadastrar.disabled = true;
+
+        if (!arquivoModelo.files.length) {
+            mostrarAnalise("vazio", "Selecione o <code>best.pt</code> para validar o modelo.");
+            return;
+        }
+
+        mostrarAnalise("carregando", "Carregando o modelo com Ultralytics e lendo as classes...");
+
+        const dados = new FormData();
+        dados.append("modelo", arquivoModelo.files[0]);
+
+        try {
+            const resposta = await fetch("/analisar-modelo", { method: "POST", body: dados });
+            const resultado = await resposta.json();
+
+            if (!resultado.ok) {
+                mostrarAnalise("erro", `<strong>Modelo recusado.</strong><p>${resultado.erro}</p>`);
+                return;
+            }
+
+            const classes = resultado.classes
+                .map((nome, indice) => `<span>${indice} · ${nome}</span>`)
+                .join("");
+            const avisos = (resultado.avisos || []).map(aviso => `<p>${aviso}</p>`).join("");
+
+            if (resultado.parece_coco) {
+                mostrarAnalise(
+                    "erro",
+                    `<strong>Modelo suspeito: parece COCO padrão.</strong>
+                     ${avisos}
+                     <div class="chips-modelo">${classes}</div>`
+                );
+                return;
+            }
+
+            const validacao = resultado.validacao || {};
+
+            if (validacao.status === "reprovado") {
+                mostrarAnalise(
+                    "erro",
+                    `<strong>Reprovado na conferência das classes oficiais.</strong>
+                     <p>${validacao.mensagem}</p>
+                     <p><a href="/validar-modelo">Abrir a tela de validação para ver classe por classe.</a></p>
+                     ${avisos}
+                     <div class="chips-modelo">${classes}</div>`
+                );
+                return;
+            }
+
+            const comRessalva = validacao.status !== "aprovado";
+            mostrarAnalise(
+                comRessalva ? "carregando" : "ok",
+                `<strong>${comRessalva ? "Aprovado com ressalva." : "Aprovado."}</strong>
+                 <p>${validacao.mensagem || resultado.total_classes + " classes encontradas."}</p>
+                 ${avisos}
+                 <div class="chips-modelo">${classes}</div>`
+            );
+            btnCadastrar.disabled = false;
+        } catch (erro) {
+            mostrarAnalise("erro", `<strong>Erro ao analisar o modelo.</strong><p>${erro}</p>`);
+        }
+    });
+</script>
+
+</body>
+</html>

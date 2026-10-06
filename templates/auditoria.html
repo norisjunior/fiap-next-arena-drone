@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Auditoria</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container container-wide">
+    <h1>Auditoria</h1>
+
+    <section class="card">
+        <h2>Revisão visual por classe</h2>
+        {% if evidencias %}
+            <div class="lista-classes-auditoria">
+                {% for grupo in evidencias %}
+                <details class="grupo-evidencia grupo-auditoria">
+                    <summary>
+                        <span>{{ grupo.nome_exibir }}</span>
+                        <small>Rodada {{ grupo.rodada }} · {{ grupo.classes|length }} classes</small>
+                    </summary>
+                    <div class="classes-do-grupo">
+                        {% for classe in grupo.classes %}
+                        <details class="classe-evidencia">
+                            <summary>
+                                <span>{{ classe.classe_detectada }}</span>
+                                <small>{{ classe.itens|length }} imagens</small>
+                            </summary>
+                            <div class="grade-evidencias">
+                                {% for item in classe.itens %}
+                                <article id="evidencia-{{ item.id }}" class="evidencia {{ item.status_revisao }}">
+                                    <img src="/imagens_anotadas/{{ item.imagem_anotada }}" alt="{{ item.classe_detectada }}">
+                                    <div class="evidencia-info">
+                                        <strong>{{ "%.1f"|format(item.confidence * 100) }}%</strong>
+                                        <span>Frame {{ item.frame_indice }}</span>
+                                        <span class="status">{{ item.status_revisao }}</span>
+                                    </div>
+                                    <div class="acoes-evidencia">
+                                        <form class="form-revisao" method="POST" action="/evidencia/{{ item.id }}/validada">
+                                            <button type="submit" class="ok">Validar</button>
+                                        </form>
+                                        <form class="form-revisao" method="POST" action="/evidencia/{{ item.id }}/rejeitada">
+                                            <button type="submit" class="erro">Rejeitar</button>
+                                        </form>
+                                        <form class="form-revisao" method="POST" action="/evidencia/{{ item.id }}/pendente">
+                                            <button type="submit" class="neutro">Pendente</button>
+                                        </form>
+                                    </div>
+                                </article>
+                                {% endfor %}
+                            </div>
+                        </details>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endfor %}
+            </div>
+        {% else %}
+        <p>Nenhuma evidência visual salva ainda.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Histórico de avaliações</h2>
+        {% if historico %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Grupo</th>
+                    <th>Rodada</th>
+                    <th>URL</th>
+                    <th>Objeto</th>
+                    <th>Detecções</th>
+                    <th>
+                        <span class="tooltip">Conf.
+                            <span class="tooltip-text">Confidence média das detecções daquela classe durante a rodada. O YOLO calcula esse valor para indicar o quanto acredita na predição.</span>
+                        </span>
+                    </th>
+                    <th>Min.</th>
+                    <th>Máx.</th>
+                    <th>Frames</th>
+                    <th>Tempo (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in historico %}
+                <tr>
+                    <td>{{ item.data_hora }}</td>
+                    <td>{{ item.grupo }}</td>
+                    <td>{{ item.rodada }}</td>
+                    <td>{{ item.stream_url }}</td>
+                    <td>{{ item.classe_detectada }}</td>
+                    <td>{{ item.deteccoes }}</td>
+                    <td>{{ "%.1f"|format(item.confidence * 100) }}%</td>
+                    <td>{{ "%.1f"|format((item.confidence_minima_detectada or item.confidence) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((item.confidence_maxima_detectada or item.confidence) * 100) }}%</td>
+                    <td>{{ item.frames_processados }}</td>
+                    <td>{{ item.tempo_ms }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>Nenhuma avaliação registrada ainda.</p>
+        {% endif %}
+    </section>
+
+    <details class="card eventos-tecnicos">
+        <summary>Eventos técnicos</summary>
+        {% if eventos %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Tipo</th>
+                    <th>Grupo</th>
+                    <th>Detalhe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for evento in eventos %}
+                <tr>
+                    <td>{{ evento.data_hora }}</td>
+                    <td>{{ evento.tipo }}</td>
+                    <td>{{ evento.grupo }}</td>
+                    <td>{{ evento.detalhe }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>Nenhum evento registrado ainda.</p>
+        {% endif %}
+    </details>
+</div>
+
+<script>
+    document.querySelectorAll(".form-revisao").forEach(form => {
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+
+            const resposta = await fetch(form.action, {
+                method: "POST",
+                headers: { "X-Requested-With": "fetch" }
+            });
+            const dados = await resposta.json();
+            const card = document.getElementById(`evidencia-${dados.id}`);
+            const status = card.querySelector(".status");
+
+            card.classList.remove("validada", "rejeitada", "pendente");
+            card.classList.add(dados.status);
+            status.textContent = dados.status;
+        });
+    });
+</script>
+
+</body>
+</html>

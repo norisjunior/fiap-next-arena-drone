@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Validar Modelo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container">
+    <h1>Validar Modelo</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card">
+        <h2>Conferir um best.pt</h2>
+        <p>
+            Use esta tela em sala. O arquivo é carregado, conferido contra as classes
+            oficiais e descartado em seguida — nada é cadastrado nem guardado.
+        </p>
+        <form method="POST" enctype="multipart/form-data">
+            <label>Arquivo best.pt:
+                <input type="file" name="modelo" accept=".pt" required>
+            </label>
+            <button type="submit">Conferir classes</button>
+        </form>
+    </div>
+
+    {% if resultado %}
+    {% set validacao = resultado.validacao %}
+    <div class="card">
+        <span class="eyebrow">Resultado{% if nome_arquivo %} · {{ nome_arquivo }}{% endif %}</span>
+
+        {% if validacao.status == "aprovado" %}
+            <div class="analise-modelo ok">
+                <strong>APROVADO</strong>
+                <p>{{ validacao.mensagem }}</p>
+            </div>
+        {% elif validacao.status == "aprovado_com_aviso" %}
+            <div class="analise-modelo carregando">
+                <strong>APROVADO COM AVISO</strong>
+                <p>{{ validacao.mensagem }}</p>
+            </div>
+        {% elif validacao.status == "sem_referencia" %}
+            <div class="analise-modelo erro">
+                <strong>NÃO FOI POSSÍVEL CONFERIR</strong>
+                <p>{{ validacao.mensagem }}</p>
+                <p><a href="/desafio">Abrir a tela Desafio.</a></p>
+            </div>
+        {% else %}
+            <div class="analise-modelo erro">
+                <strong>REPROVADO</strong>
+                <p>{{ validacao.mensagem }}</p>
+            </div>
+        {% endif %}
+
+        {% for aviso in resultado.avisos %}
+            <div class="alerta erro">{{ aviso }}</div>
+        {% endfor %}
+
+        {% if resultado.parece_coco %}
+            <div class="alerta erro">
+                As classes parecem ser do COCO padrão. Confira se o grupo não enviou um modelo pronto.
+            </div>
+        {% endif %}
+    </div>
+
+    {% if validacao.oficiais %}
+    <div class="card">
+        <h2>Classe por classe</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID YOLO</th>
+                    <th>Classe esperada</th>
+                    <th>Situação</th>
+                    <th>ID no modelo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for linha in validacao.linhas %}
+                <tr class="{{ 'destaque' if linha.situacao == 'faltando' else '' }}">
+                    <td>{{ linha.id_oficial }}</td>
+                    <td>{{ linha.classe }}</td>
+                    <td>
+                        {% if linha.situacao == "ok" %}
+                            presente
+                        {% else %}
+                            <strong>FALTANDO</strong>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if linha.situacao == "ok" %}
+                            {{ linha.id_modelo }}{% if linha.id_modelo != linha.id_oficial %} (ordem diferente){% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if validacao.extras %}
+        <p><strong>Classes que sobram no modelo e não existem na lista oficial:</strong></p>
+        <div class="chips-modelo">
+            {% for classe in validacao.extras %}<span>{{ classe }}</span>{% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Classes lidas do modelo</h2>
+        <p>{{ resultado.total_classes }} classe(s), na ordem em que o modelo declara.</p>
+        <div class="chips-modelo">
+            {% for classe in resultado.classes %}<span>{{ loop.index0 }} · {{ classe }}</span>{% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Lista oficial do desafio</h2>
+        {% if oficiais %}
+        <p>
+            {{ oficiais|length }} classes. A grafia precisa ser exatamente esta.
+            A ordem é recomendada, mas não reprova: o app casa as detecções por nome.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID YOLO</th>
+                    <th>Classe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in oficiais %}
+                <tr>
+                    <td>{{ item.id_classe_oficial }}</td>
+                    <td>{{ item.classe }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p><small>O <strong>ID YOLO</strong> começa em 0 e é o que vai no <code>data.yaml</code> do treino.</small></p>
+        {% else %}
+        <div class="alerta erro">
+            Nenhuma classe oficial cadastrada. Cadastre as classes em <a href="/desafio">Desafio</a>.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+</body>
+</html>

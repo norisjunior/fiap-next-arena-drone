@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Ranking</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+{% include "_nav.html" %}
+
+<div class="container container-wide">
+    <h1>Ranking dos Grupos</h1>
+
+    {% if pendentes_total %}
+    <div class="alerta erro">
+        <strong>{{ pendentes_total }} evidência(s) ainda pendente(s) de validação.</strong>
+        Evidência não validada não pontua. Termine a revisão em
+        <a href="/auditoria">Auditoria</a> antes de anunciar o resultado.
+    </div>
+    {% endif %}
+
+    {% if ranking %}
+    <div class="card">
+        <table class="grid-arena">
+            <thead>
+                <tr>
+                    <th>Pos.</th>
+                    <th>Grupo</th>
+                    <th>Turma</th>
+                    <th>Pontuação</th>
+                    <th>Classes</th>
+                    <th>Detecções</th>
+                    <th>Por classe</th>
+                    <th>Pend.</th>
+                    <th>Tempo méd.</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in ranking %}
+                <tr class="{{ 'destaque' if loop.first and item.tem_pontuacao else '' }}">
+                    <td class="grid-posicao">{{ item.posicao }}</td>
+                    <td><strong>{{ item.nome_exibir }}</strong></td>
+                    <td>{{ item.turma }}</td>
+                    <td class="grid-numero">
+                        {% if item.tem_pontuacao %}
+                            {{ "%.1f"|format(item.pontuacao * 100) }}%
+                        {% else %}
+                            <span class="grid-neutro">sem pontuação</span>
+                        {% endif %}
+                    </td>
+                    <td class="grid-numero">
+                        {{ item.classes_pontuadas }}<span class="grid-de">/{{ classes_esperadas|length }}</span>
+                    </td>
+                    <td class="grid-numero">{{ item.deteccoes_total }}</td>
+                    <td class="grid-classes">
+                        {% for classe in item.classes if classe.deteccoes or classe.pontuou %}
+                            <span class="grid-chip {{ 'ok' if classe.pontuou else 'zero' }}"
+                                  title="{{ classe.deteccoes }} detecções no turno">
+                                {{ classe.classe }}
+                                {% if classe.pontuou %}{{ "%.0f"|format(classe.confidence * 100) }}%{% else %}não validada{% endif %}
+                            </span>
+                        {% else %}
+                            <span class="grid-neutro">nenhuma</span>
+                        {% endfor %}
+                    </td>
+                    <td class="grid-numero">{{ item.evidencias_pendentes or "—" }}</td>
+                    <td class="grid-numero">{{ item.tempo_medio_ms }} ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card">
+        <p>Nenhum grupo avaliado ainda. <a href="/avaliar">Avaliar grupos.</a></p>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Como o resultado é calculado</h2>
+        <ul class="lista-criterios">
+            <li>Cada classe vale a maior confidence <strong>validada</strong> na auditoria.</li>
+            <li>A <strong>pontuação</strong> é a média só das classes que o grupo detectou. Classe que não saiu no dado não entra na conta.</li>
+            <li><strong>Detecções</strong> é o total de frames, no turno, com uma classe do desafio acima do mínimo.</li>
+            <li>Só entra a <strong>última rodada</strong> de cada grupo.</li>
+        </ul>
+        <p><strong>Ordem de classificação:</strong></p>
+        <ol class="lista-criterios">
+            <li>maior pontuação;</li>
+            <li>mais classes pontuadas;</li>
+            <li>mais detecções;</li>
+            <li>menor tempo médio de inferência.</li>
+        </ol>
+        <p><a href="/dashboard">Ver o pódio</a></p>
+    </div>
+</div>
+
+</body>
+</html>

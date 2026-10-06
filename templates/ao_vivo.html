@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Telão</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="telao-full">
+
+<main class="telao-retorno">
+    <section class="telao-captura telao-captura-cheia">
+        <div class="frame-label telao-label">
+            <span>{{ desafio.nome_evento }} · Retorno ESP32-CAM</span>
+            <span>{{ desafio.subtitulo }}</span>
+        </div>
+
+        <div class="frame-camera telao-frame telao-frame-cheio" id="frameCamera">
+            <div class="frame-camera-imagem">
+                <img id="frameAoVivo" alt="Frame anotado da avaliação ao vivo">
+                <div class="sem-frame" id="semFrame">
+                    <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+                    <strong>Aguardando...</strong>
+                </div>
+            </div>
+
+            <div class="placar-deteccao" id="placarDeteccao">
+                <span class="placar-label">Tempo</span>
+                <strong class="telao-cronometro" id="cronometroTelao">--:--</strong>
+                <span class="placar-label">Detectado agora</span>
+                <strong id="classeAgora">—</strong>
+                <strong id="confidencePrincipal">0.0%</strong>
+                <div class="telao-barra"><span id="telaoBarra"></span></div>
+                <small id="estadoDeteccao">Aguardando START</small>
+            </div>
+
+            <div class="telao-classes" id="classesTelao"></div>
+
+            <div class="rodape-telao">
+                <span id="nomeGrupo">Aguardando grupo</span>
+                <span id="tempoInfo">0 frames · 0 ms</span>
+            </div>
+
+            <div class="aviso-camera" id="avisoCameraTelao" hidden>CÂMERA INSTÁVEL</div>
+            <div class="scan-line" id="scanLine"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    const statusUrl = "{{ url_for('status_telao') }}";
+    const frame = document.getElementById("frameAoVivo");
+    const semFrame = document.getElementById("semFrame");
+    const frameCamera = document.getElementById("frameCamera");
+    const scanLine = document.getElementById("scanLine");
+    const nomeGrupo = document.getElementById("nomeGrupo");
+    const tempoInfo = document.getElementById("tempoInfo");
+    const cronometroTelao = document.getElementById("cronometroTelao");
+    const classeAgora = document.getElementById("classeAgora");
+    const confidencePrincipal = document.getElementById("confidencePrincipal");
+    const telaoBarra = document.getElementById("telaoBarra");
+    const estadoDeteccao = document.getElementById("estadoDeteccao");
+    const placarDeteccao = document.getElementById("placarDeteccao");
+    const classesTelao = document.getElementById("classesTelao");
+    const avisoCameraTelao = document.getElementById("avisoCameraTelao");
+
+    const CONFIDENCE_MINIMA = {{ confidence_minima }};
+
+    let ultimoId = "";
+
+    // se o stream cair, a próxima consulta de status abre de novo
+    frame.addEventListener("error", () => frame.removeAttribute("src"));
+
+    function porcentagem(valor) {
+        return `${(Number(valor || 0) * 100).toFixed(1)}%`;
+    }
+
+    function formatarTempo(segundos) {
+        const total = Math.max(0, Number(segundos || 0));
+        const min = Math.floor(total / 60).toString().padStart(2, "0");
+        const sec = Math.floor(total % 60).toString().padStart(2, "0");
+        return `${min}:${sec}`;
+    }
+
+    function melhorDeteccao(classes) {
+        if (!classes || classes.length === 0) {
+            return null;
+        }
+        return [...classes].sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0];
+    }
+
+    function mostrarPlaceholder(status) {
+        frame.removeAttribute("src");  // fecha o stream
+        frame.style.display = "none";
+        semFrame.style.display = "grid";
+        semFrame.innerHTML = `
+            <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+            <strong>Aguardando...</strong>
+            ${status === "preparada" ? "<span>Sessão preparada no app do professor</span>" : ""}
+        `;
+    }
+
+    // O backend já entrega em classes_frame só as classes do desafio.
+    // O telão não compara nada: só exibe o que veio pronto.
+    function atualizarPlacar(dados) {
+        const rodando = dados.status === "rodando";
+        const noFrame = rodando ? melhorDeteccao(dados.classes_frame) : null;
+        const conf = noFrame ? Number(noFrame.confidence || 0) : 0;
+        const acertou = conf >= CONFIDENCE_MINIMA;
+
+        placarDeteccao.classList.remove("acertou", "errou", "sem-alvo");
+        classeAgora.textContent = noFrame ? noFrame.classe : "—";
+        confidencePrincipal.textContent = porcentagem(conf);
+        telaoBarra.style.width = `${Math.min(100, conf * 100)}%`;
+        telaoBarra.classList.toggle("acertou", acertou);
+
+        if (!rodando) {
+            estadoDeteccao.textContent = "Aguardando START";
+            placarDeteccao.classList.add("sem-alvo");
+        } else if (acertou) {
+            estadoDeteccao.textContent = "OBJETO RECONHECIDO";
+            placarDeteccao.classList.add("acertou");
+        } else if (noFrame) {
+            estadoDeteccao.textContent = "QUASE LÁ";
+            placarDeteccao.classList.add("errou");
+        } else {
+            estadoDeteccao.textContent = "PROCURANDO";
+            placarDeteccao.classList.add("errou");
+        }
+
+        classesTelao.innerHTML = (dados.classes || []).map(item => `
+            <span class="${item.deteccoes > 0 ? "ok" : ""}">
+                ${item.deteccoes > 0 ? "✔" : "·"} ${item.classe}${item.deteccoes > 0 ? " " + porcentagem(item.melhor_conf) : ""}
+            </span>`).join("");
+    }
+
+    async function atualizarTela() {
+        const resposta = await fetch(statusUrl);
+        let dados = await resposta.json();
+        // turno encerrado: o telão volta para a tela de espera do próximo grupo
+        if (dados.status === "concluida") {
+            dados = { status: "sem_sessao", id: dados.id };
+        }
+        const status = dados.status || "sem_sessao";
+        const progresso = dados.progresso || 0;
+
+        if (dados.id && dados.id !== ultimoId) {
+            ultimoId = dados.id;
+            frame.removeAttribute("src");
+            mostrarPlaceholder(status);
+        }
+
+        avisoCameraTelao.hidden = !(status === "rodando" && dados.camera_ok === false);
+        nomeGrupo.textContent = dados.nome_exibir
+            ? `${dados.nome_exibir}${dados.turma ? " · " + dados.turma : ""}`
+            : "Aguardando grupo";
+        cronometroTelao.textContent = status === "sem_sessao" ? "--:--" : formatarTempo(dados.tempo_restante_s);
+        tempoInfo.textContent = `${dados.frames_processados || 0} frames · ${dados.tempo_ms || 0} ms`;
+        frameCamera.className = `frame-camera telao-frame telao-frame-cheio ${status}`;
+        scanLine.style.top = `${progresso}%`;
+
+        if (["sem_sessao", "preparada"].includes(status)) {
+            mostrarPlaceholder(status);
+        } else if (dados.imagem_url) {
+            // o stream fica aberto: o servidor empurra cada frame novo
+            if (!frame.getAttribute("src")) {
+                frame.src = `${dados.imagem_url}?sessao=${dados.id}`;
+            }
+            frame.style.display = "block";
+            semFrame.style.display = "none";
+        } else {
+            mostrarPlaceholder(status);
+        }
+
+        atualizarPlacar(dados);
+    }
+
+    setInterval(atualizarTela, 500);
+    atualizarTela();
+</script>
+
+</body>
+</html>
