@@ -98,7 +98,7 @@ Acesse no navegador: **http://127.0.0.1:5000**
 
 ### 1. Cadastre o desafio
 
-Abra `/desafio` e informe o nome do evento, as classes esperadas (uma por linha, na ordem do `data.yaml`) e a duração do turno. As classes são gravadas em `aluno/classes-oficiais.txt`, o mesmo arquivo do autoteste do aluno. Use **Baixar classes-oficiais.txt** para entregar aos grupos.
+Abra `/desafio` e informe o nome do evento, as classes esperadas (uma por linha, na ordem do `data.yaml`) e a duração do turno. As classes são gravadas em `aluno/classes-oficiais.txt` (o mesmo arquivo do autoteste do aluno) quando o app roda dentro do monorepo. Rodando o app sozinho, elas ficam em `dados/classes-oficiais.txt`. Use **Baixar classes-oficiais.txt** para entregar aos grupos.
 
 Cadastre as classes antes de receber os modelos: o cadastro recusa o `best.pt` que não bater com a lista.
 

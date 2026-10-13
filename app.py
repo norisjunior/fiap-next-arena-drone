@@ -79,9 +79,15 @@ PASTA_BACKUPS = "dados/backups"
 # entregue compactada aos grupos: o script de autoteste do aluno precisa
 # achar o arquivo sem depender de nada fora da propria pasta.
 # A tela /desafio edita este mesmo arquivo: nao existe copia paralela.
-ARQUIVO_CLASSES_OFICIAIS = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "aluno", "classes-oficiais.txt"
+# Fora do monorepo (app clonado sozinho) a pasta aluno/ nao existe, entao
+# o arquivo fica em dados/.
+PASTA_ALUNO = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "aluno"
 ))
+if os.path.isdir(PASTA_ALUNO):
+    ARQUIVO_CLASSES_OFICIAIS = os.path.join(PASTA_ALUNO, "classes-oficiais.txt")
+else:
+    ARQUIVO_CLASSES_OFICIAIS = os.path.join("dados", "classes-oficiais.txt")
 
 # cria as pastas se não existirem
 for pasta in [PASTA_MODELOS, PASTA_ANOTADAS, "dados"]:
