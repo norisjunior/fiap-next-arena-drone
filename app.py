@@ -7,11 +7,16 @@ Como usar:
   python app.py
 
 Acesse: http://127.0.0.1:5000
+
+Senha do professor (uma vez): python app.py --senha  e copie a linha para o .env
 """
 
 import os
+import hmac
 import json
+import pickletools
 import shutil
+import sys
 import sqlite3
 import tempfile
 import threading
@@ -20,8 +25,10 @@ import unicodedata
 import urllib.request
 import uuid
 import webbrowser
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify, Response
+import zipfile
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify, Response, session
+from werkzeug.security import check_password_hash, generate_password_hash
 from ultralytics import YOLO
 import cv2
 import numpy as np
@@ -35,7 +42,7 @@ CONFIDENCE_MINIMA = 0.50  # confiança mínima para a detecção contar
 CONFIDENCE_PREDICT = 0.25  # limiar do detector: mais baixo para o telão mostrar "quase lá"
 DURACAO_AVALIACAO_PADRAO = 120  # segundos do turno, usado até o desafio ser cadastrado
 INTERVALO_ENTRE_FRAMES = 0.05
-TOP_PREDICOES_POR_CLASSE = 3  # evidências guardadas por classe
+TOP_PREDICOES_POR_CLASSE = 5  # evidências guardadas por classe
 INTERVALO_EVIDENCIA_POR_CLASSE = 3.0  # evita salvar muitas imagens quase iguais
 SEGUNDOS_CAMERA_INSTAVEL = 1.5   # sem frame por mais que isso, avisa na tela
 MAX_EXTENSAO_TURNO_S = 30        # teto do tempo devolvido por queda de camera
@@ -67,6 +74,26 @@ app = Flask(__name__)
 # Chave das sessões do Flask, definida no .env (veja .env.example).
 # Sem ela, gera uma chave aleatória: funciona, mas as sessões caem a cada reinício.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
+
+# Só o próprio notebook acessa o app: o telão abre aqui e é espelhado no
+# projetor. As câmeras não precisam chegar ao app, é ele quem busca o /capture.
+APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
+APP_PORT = 5000
+
+# Teto do upload de best.pt (um YOLO nano tem ~5 MB; sobra para modelos maiores).
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
+
+# Cookie de sessão fora do alcance de JavaScript e de outros sites.
+# A sessão dura um dia de evento inteiro, para não deslogar no meio de um turno.
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
+
+# Login único do professor. Sem ADMIN_PASSWORD_HASH no .env o app roda sem
+# login (como antes) e avisa no console: o evento nunca fica travado.
+ADMIN_USER = os.environ.get("ADMIN_USER", "professor")
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "")
+LOGIN_ATIVO = bool(ADMIN_PASSWORD_HASH)
 
 PASTA_MODELOS     = "modelos_recebidos"
 PASTA_ANOTADAS    = "imagens_anotadas"
@@ -203,6 +230,86 @@ def detectar_dispositivo():
 DISPOSITIVO, NOME_DISPOSITIVO = detectar_dispositivo()
 
 
+# Um best.pt é um zip com um pickle dentro, e carregar um pickle pode executar
+# código. Antes do YOLO() lemos o pickle SEM executá-lo e listamos o que ele
+# importa: um modelo legítimo só traz torch, ultralytics e tipos básicos.
+PICKLE_MODULOS_PERMITIDOS = {
+    "torch", "ultralytics", "collections", "numpy", "_codecs",
+    "builtins", "__builtin__", "pathlib", "datetime", "copyreg", "argparse",
+}
+# dentro de builtins, só tipos inofensivos (nada de eval, exec, getattr, open...)
+PICKLE_BUILTINS_PERMITIDOS = {
+    "set", "frozenset", "slice", "range", "complex", "bytearray", "bytes",
+    "dict", "list", "tuple", "int", "float", "str", "bool", "object",
+}
+# partes de torch/ultralytics/numpy que baixam, instalam ou carregam código
+PICKLE_PREFIXOS_PROIBIDOS = (
+    "torch.hub", "torch.load", "torch.save", "torch.jit", "torch.package",
+    "torch.ops", "torch._ops", "torch.utils.cpp_extension", "torch.serialization",
+    "ultralytics.hub", "ultralytics.utils.downloads", "ultralytics.utils.checks",
+    "numpy.load", "numpy.ctypeslib", "numpy.distutils", "numpy.f2py",
+)
+
+
+def globais_do_pickle(dados):
+    """Lista os (módulo, nome) que um pickle importaria, sem executá-lo."""
+    memo, textos, encontrados = {}, [], set()
+    for opcode, arg, _ in pickletools.genops(dados):
+        nome = opcode.name
+        if nome in ("SHORT_BINUNICODE", "BINUNICODE", "BINUNICODE8", "UNICODE",
+                    "SHORT_BINSTRING", "BINSTRING", "STRING"):
+            textos.append(arg)
+        elif nome in ("BINPUT", "LONG_BINPUT", "PUT"):
+            memo[arg] = textos[-1] if textos else None
+        elif nome == "MEMOIZE":
+            memo[len(memo)] = textos[-1] if textos else None
+        elif nome in ("BINGET", "LONG_BINGET", "GET"):
+            if isinstance(memo.get(arg), str):
+                textos.append(memo[arg])
+        elif nome in ("GLOBAL", "INST"):
+            encontrados.add(tuple(arg.split(" ", 1)))
+        elif nome == "STACK_GLOBAL":
+            if len(textos) < 2:
+                raise ValueError("pickle com importação ilegível")
+            encontrados.add((textos[-2], textos[-1]))
+    return encontrados
+
+
+def verificar_pickle_modelo(caminho_modelo):
+    """Recusa o best.pt se o pickle importar algo fora da lista permitida."""
+    try:
+        with zipfile.ZipFile(caminho_modelo) as arquivo_zip:
+            pickles = [n for n in arquivo_zip.namelist() if n.endswith(".pkl")]
+            if not pickles:
+                raise ValueError("o arquivo não contém os dados do modelo")
+            importados = set()
+            for nome in pickles:
+                importados |= globais_do_pickle(arquivo_zip.read(nome))
+    except zipfile.BadZipFile:
+        raise ValueError("o arquivo não é um best.pt do PyTorch/Ultralytics")
+    except ValueError:
+        raise
+    except Exception as erro:
+        raise ValueError(f"não foi possível inspecionar o arquivo ({erro})")
+
+    suspeitos = []
+    for modulo, nome in sorted(importados):
+        completo = f"{modulo}.{nome}"
+        raiz = modulo.split(".")[0]
+        if raiz not in PICKLE_MODULOS_PERMITIDOS:
+            suspeitos.append(completo)
+        elif raiz in ("builtins", "__builtin__") and nome not in PICKLE_BUILTINS_PERMITIDOS:
+            suspeitos.append(completo)
+        elif any(completo == p or completo.startswith(p + ".") or modulo == p
+                 for p in PICKLE_PREFIXOS_PROIBIDOS):
+            suspeitos.append(completo)
+
+    if suspeitos:
+        print(f"[seguranca] best.pt recusado ({caminho_modelo}): {', '.join(suspeitos)}")
+        raise ValueError("arquivo recusado por segurança: ele tenta usar "
+                         + ", ".join(suspeitos[:5]))
+
+
 def obter_modelo(caminho_modelo):
     """Carrega o best.pt usando cache quente, para a troca de grupo ser rápida.
 
@@ -214,6 +321,7 @@ def obter_modelo(caminho_modelo):
         if caminho_modelo in MODELOS_CARREGADOS:
             return MODELOS_CARREGADOS[caminho_modelo]
 
+    verificar_pickle_modelo(caminho_modelo)
     modelo = YOLO(caminho_modelo)
 
     # inferência de aquecimento: paga o custo da primeira chamada agora,
@@ -317,6 +425,7 @@ def comparar_com_classes_oficiais(classes_modelo):
 
 def listar_classes_do_modelo(caminho_modelo):
     """Carrega um best.pt e retorna as classes informadas pelo modelo."""
+    verificar_pickle_modelo(caminho_modelo)
     modelo = YOLO(caminho_modelo)
     nomes = modelo.names
 
@@ -689,9 +798,13 @@ def listar_evidencias_agrupadas():
         classes = []
         for classe in grupo["classes"].values():
             classe["itens"].sort(key=lambda item: item["confidence"], reverse=True)
+            classe["pendentes"] = sum(1 for item in classe["itens"] if item["status_revisao"] == "pendente")
             classes.append(classe)
         classes.sort(key=lambda item: item["classe_detectada"])
         grupo["classes"] = classes
+        # rodada auditada = nenhuma imagem pendente (o selo na tela usa isto)
+        grupo["total_itens"] = sum(len(classe["itens"]) for classe in classes)
+        grupo["pendentes"] = sum(classe["pendentes"] for classe in classes)
         resultado.append(grupo)
 
     resultado.sort(key=lambda item: (item["rodada"], item["data_hora"]), reverse=True)
@@ -1442,8 +1555,8 @@ def iniciar_job_preparado(job_id):
 
 def abrir_janelas_iniciais():
     """Abre a janela principal e a tela do telão quando o app inicia."""
-    webbrowser.open("http://127.0.0.1:5000")
-    webbrowser.open("http://127.0.0.1:5000/telao")
+    webbrowser.open(f"http://127.0.0.1:{APP_PORT}")
+    webbrowser.open(f"http://127.0.0.1:{APP_PORT}/telao")
 
 
 iniciar_banco()
@@ -1453,6 +1566,75 @@ migrar_json_para_sqlite()
 # ------------------------------------------------------------------
 # Rotas
 # ------------------------------------------------------------------
+
+def destino_seguro(destino):
+    """Aceita só caminhos internos do app no ?next= (evita redirecionar para fora)."""
+    if destino and destino.startswith("/") and not destino.startswith("//") and "\\" not in destino:
+        return destino
+    return url_for("index")
+
+
+@app.before_request
+def exigir_login():
+    """Todas as telas pedem login, menos a própria tela de login e o CSS/logo."""
+    if not LOGIN_ATIVO or session.get("logado"):
+        return None
+    if request.endpoint in ("login", "sessao", "static"):
+        return None
+
+    # Navegação do navegador vai para o login; chamadas fetch/stream recebem
+    # 401, para a tela não tentar ler a página de login como JSON.
+    if "text/html" in request.headers.get("Accept", ""):
+        return redirect(url_for("login", next=request.full_path.rstrip("?")))
+    return jsonify({"ok": False, "erro": "Sessão expirada. Faça login de novo."}), 401
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Login único do professor (usuário e hash da senha vêm do .env)."""
+    if not LOGIN_ATIVO:
+        return redirect(url_for("index"))
+
+    destino = destino_seguro(request.values.get("next", ""))
+
+    if request.method == "POST":
+        usuario = request.form.get("usuario", "")
+        senha = request.form.get("senha", "")
+        usuario_ok = hmac.compare_digest(usuario.encode(), ADMIN_USER.encode())
+        senha_ok = check_password_hash(ADMIN_PASSWORD_HASH, senha)
+        if usuario_ok and senha_ok:
+            session.clear()
+            session.permanent = True
+            session["logado"] = True
+            return redirect(destino)
+        time.sleep(1)  # freia tentativas em sequência
+        flash("Usuário ou senha incorretos.", "erro")
+
+    return render_template("login.html", next=destino)
+
+
+@app.route("/sessao")
+def sessao():
+    """A tela de login consulta isto para seguir sozinha quando outra aba entra."""
+    return jsonify({"logado": bool(session.get("logado"))})
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.errorhandler(413)
+def upload_grande_demais(_erro):
+    """Upload acima de MAX_UPLOAD_MB."""
+    limite = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    mensagem = f"Arquivo grande demais. O limite é {limite} MB."
+    if request.path == "/analisar-modelo":
+        return jsonify({"ok": False, "erro": mensagem}), 413
+    flash(mensagem, "erro")
+    return redirect(request.path)
+
 
 @app.context_processor
 def injetar_desafio():
@@ -1873,9 +2055,30 @@ def servir_imagem_anotada(caminho):
     return send_from_directory(PASTA_ANOTADAS, caminho)
 
 
+def gerar_hash_senha():
+    """python app.py --senha : pede a senha e imprime a linha para o .env."""
+    import getpass
+    senha = getpass.getpass("Nova senha do professor: ")
+    if senha != getpass.getpass("Repita a senha: "):
+        print("As senhas não conferem.")
+        return
+    # aspas simples: o hash tem '$' e o .env não deve interpretá-lo
+    print("\nCopie para o .env:")
+    print(f"ADMIN_PASSWORD_HASH='{generate_password_hash(senha)}'")
+
+
 if __name__ == "__main__":
+    if "--senha" in sys.argv:
+        gerar_hash_senha()
+        sys.exit(0)
+
     print("Iniciando app do professor...")
-    print("Acesse: http://127.0.0.1:5000")
+    print(f"Acesse: http://127.0.0.1:{APP_PORT}")
+    if APP_HOST != "127.0.0.1":
+        print(f"[seguranca] AVISO: app aberto na rede em {APP_HOST}:{APP_PORT}.")
+    if not LOGIN_ATIVO:
+        print("[seguranca] AVISO: login desligado (sem ADMIN_PASSWORD_HASH no .env). "
+              "Gere com: python app.py --senha")
     if ABRIR_JANELAS_AO_INICIAR:
         threading.Timer(1.2, abrir_janelas_iniciais).start()
-    app.run(debug=False, host="0.0.0.0", port=5000, use_reloader=False)
+    app.run(debug=False, host=APP_HOST, port=APP_PORT, use_reloader=False)

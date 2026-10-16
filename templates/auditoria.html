@@ -23,19 +23,25 @@
     <section class="card">
         <h2>Revisão visual por classe</h2>
         {% if evidencias %}
+            {% set auditadas = evidencias|selectattr("pendentes", "equalto", 0)|list|length %}
+            <p class="resumo-auditoria">
+                Rodadas auditadas: <strong id="total-auditadas">{{ auditadas }}</strong> de {{ evidencias|length }}
+            </p>
             <div class="lista-classes-auditoria">
                 {% for grupo in evidencias %}
-                <details class="grupo-evidencia grupo-auditoria">
+                <details class="grupo-evidencia grupo-auditoria {{ 'estado-auditado' if grupo.pendentes == 0 else 'estado-pendente' }}">
                     <summary>
                         <span>{{ grupo.nome_exibir }}</span>
                         <small>Rodada {{ grupo.rodada }} · {{ grupo.classes|length }} classes</small>
+                        <b class="selo-auditoria">{% if grupo.pendentes == 0 %}✓ Auditado{% else %}{{ grupo.pendentes }} de {{ grupo.total_itens }} pendentes{% endif %}</b>
                     </summary>
                     <div class="classes-do-grupo">
                         {% for classe in grupo.classes %}
-                        <details class="classe-evidencia">
+                        <details class="classe-evidencia {{ 'estado-auditado' if classe.pendentes == 0 else 'estado-pendente' }}">
                             <summary>
                                 <span>{{ classe.classe_detectada }}</span>
                                 <small>{{ classe.itens|length }} imagens</small>
+                                <b class="selo-auditoria">{% if classe.pendentes == 0 %}✓ Auditada{% else %}{{ classe.pendentes }} pendente{{ 's' if classe.pendentes > 1 else '' }}{% endif %}</b>
                             </summary>
                             <div class="grade-evidencias">
                                 {% for item in classe.itens %}
@@ -162,8 +168,35 @@
             card.classList.remove("validada", "rejeitada", "pendente");
             card.classList.add(dados.status);
             status.textContent = dados.status;
+            atualizarSelos();
         });
     });
+
+    // Recalcula os selos "Auditado" / "N pendentes" depois de cada clique,
+    // sem recarregar a página (e sem fechar o grupo aberto).
+    function marcarSelo(bloco, pendentes, texto) {
+        bloco.classList.toggle("estado-auditado", pendentes === 0);
+        bloco.classList.toggle("estado-pendente", pendentes > 0);
+        bloco.querySelector(":scope > summary .selo-auditoria").textContent = texto;
+    }
+
+    function atualizarSelos() {
+        let auditadas = 0;
+        document.querySelectorAll(".grupo-auditoria").forEach(grupo => {
+            grupo.querySelectorAll(".classe-evidencia").forEach(classe => {
+                const pendentes = classe.querySelectorAll(".evidencia.pendente").length;
+                marcarSelo(classe, pendentes,
+                    pendentes === 0 ? "✓ Auditada" : `${pendentes} pendente${pendentes > 1 ? "s" : ""}`);
+            });
+            const total = grupo.querySelectorAll(".evidencia").length;
+            const pendentes = grupo.querySelectorAll(".evidencia.pendente").length;
+            if (pendentes === 0) auditadas++;
+            marcarSelo(grupo, pendentes,
+                pendentes === 0 ? "✓ Auditado" : `${pendentes} de ${total} pendentes`);
+        });
+        const contador = document.getElementById("total-auditadas");
+        if (contador) contador.textContent = auditadas;
+    }
 </script>
 
 </body>

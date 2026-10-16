@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ desafio.nome_evento }} — Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="barra-titulo">
+    <div class="marca-next">
+        <img src="{{ url_for('static', filename='LogoFIAP.png') }}" alt="FIAP">
+        <span>{{ desafio.nome_evento }}</span>
+    </div>
+    <span class="subtitulo-next">{{ desafio.subtitulo }}</span>
+</header>
+
+<main class="container">
+    <h1>Acesso do professor</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for categoria, msg in messages %}
+            <div class="alerta {{ categoria }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="card">
+        <form method="POST" action="{{ url_for('login') }}">
+            <input type="hidden" name="next" value="{{ next }}">
+            <label>Usuário:
+                <input type="text" name="usuario" autocomplete="username" required autofocus>
+            </label>
+            <label>Senha:
+                <input type="password" name="senha" autocomplete="current-password" required>
+            </label>
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</main>
+
+<script>
+    // O app abre duas abas (principal e telão). Entrando por uma delas,
+    // esta aqui percebe a sessão nova e segue para a página que pediu.
+    setInterval(async () => {
+        try {
+            const resposta = await fetch("{{ url_for('sessao') }}");
+            const dados = await resposta.json();
+            if (dados.logado) {
+                window.location.replace({{ next | tojson }});
+            }
+        } catch (erro) {}
+    }, 1500);
+</script>
+
+</body>
+</html>

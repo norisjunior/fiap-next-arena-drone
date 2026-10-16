@@ -65,6 +65,18 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ```
 Cole a chave gerada em `FLASK_SECRET_KEY` dentro do `.env`.
 
+Defina a senha do professor (login único que protege todas as telas):
+```
+python app.py --senha
+```
+Copie a linha `ADMIN_PASSWORD_HASH='...'` que aparecer para o `.env`. Sem ela o app roda sem login e avisa no console.
+
+### Segurança
+
+- O app escuta só em `127.0.0.1` (`APP_HOST` no `.env`): apenas o próprio notebook abre as telas. O telão abre no notebook e é espelhado no projetor; as câmeras não precisam acessar o app, é ele quem busca o `/capture`.
+- Upload de `best.pt` limitado a `MAX_UPLOAD_MB` (padrão 100 MB).
+- Antes de carregar um `best.pt`, o app lê o pickle interno **sem executá-lo** e recusa o arquivo se ele tentar usar algo fora de `torch`/`ultralytics`/tipos básicos (por exemplo `os.system`, `eval`, `exec`). O motivo aparece na tela e no console com o prefixo `[seguranca]`.
+
 ---
 
 ## Como iniciar
@@ -166,12 +178,12 @@ No início do `app.py`:
 ```python
 CONFIDENCE_MINIMA = 0.50   # confiança mínima para registrar deteccao
 DURACAO_AVALIACAO_PADRAO = 120
-INTERVALO_ENTRE_FRAMES = 0.10
-TOP_PREDICOES_POR_CLASSE = 10
-INTERVALO_EVIDENCIA_POR_CLASSE = 2.0
+INTERVALO_ENTRE_FRAMES = 0.05
+TOP_PREDICOES_POR_CLASSE = 5
+INTERVALO_EVIDENCIA_POR_CLASSE = 3.0
 ```
 
-`INTERVALO_ENTRE_FRAMES = 0.10` tenta processar ate 10 frames por segundo. A tela ao vivo usa os proprios frames da avaliacao, sem abrir outra captura em paralelo.
+`INTERVALO_ENTRE_FRAMES = 0.05` tenta processar ate 20 frames por segundo. A tela ao vivo usa os proprios frames da avaliacao, sem abrir outra captura em paralelo.
 
 ---
 

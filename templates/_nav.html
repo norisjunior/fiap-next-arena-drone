@@ -3,11 +3,17 @@
 <nav>
     <a href="/desafio" class="{{ 'ativo' if rota == '/desafio' else '' }}">Desafio</a>
     <a href="/" class="{{ 'ativo' if rota == '/' else '' }}">Cadastro</a>
-    <a href="/validar-modelo" class="{{ 'ativo' if rota == '/validar-modelo' else '' }}">Validar modelo</a>
     <a href="/avaliar" class="{{ 'ativo' if rota == '/avaliar' else '' }}">Avaliar</a>
     <a href="/arena-admin" class="{{ 'ativo' if rota == '/arena-admin' else '' }}">Turno</a>
+    <a href="/auditoria" class="{{ 'ativo' if rota == '/auditoria' else '' }}">Auditoria</a>
     <a href="/ranking" class="{{ 'ativo' if rota == '/ranking' else '' }}">Ranking</a>
     <a href="/dashboard" class="{{ 'ativo' if rota == '/dashboard' else '' }}">Dashboard</a>
-    <a href="/auditoria" class="{{ 'ativo' if rota == '/auditoria' else '' }}">Auditoria</a>
     <a href="/criterios" class="{{ 'ativo' if rota == '/criterios' else '' }}">Critérios</a>
+    <span class="nav-rotulo">Opcional:</span>
+    <a href="/validar-modelo" class="{{ 'ativo' if rota == '/validar-modelo' else '' }}">Validar modelo</a>
+    {% if session.get('logado') %}
+    <form method="POST" action="/logout" class="nav-sair">
+        <button type="submit">Sair</button>
+    </form>
+    {% endif %}
 </nav>
