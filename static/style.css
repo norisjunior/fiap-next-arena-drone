@@ -1578,8 +1578,8 @@ code {
     border: 2px solid var(--line);
     border-radius: 12px;
     opacity: 0;
-    transform: translateY(26px) scale(0.94);
-    transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.2, 1.3, 0.4, 1);
+    transform: translateY(40px) scale(0.85);
+    transition: opacity 0.9s ease 1s, transform 0.9s cubic-bezier(0.2, 1.3, 0.4, 1) 1s;
 }
 
 .show-coluna.revelado .show-card {
@@ -1638,7 +1638,35 @@ code {
     border-radius: 10px 10px 0 0;
     transform: scaleY(0);
     transform-origin: bottom;
-    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Troféu: cai girando depois que o card aparece */
+.show-trofeu {
+    width: 76px;
+    height: 76px;
+    opacity: 0;
+    transform: translateY(-80px) scale(0.3) rotate(-25deg);
+    transition: opacity 0.6s ease 1.7s, transform 1s cubic-bezier(0.2, 1.6, 0.4, 1) 1.7s;
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
+}
+
+.show-coluna.revelado .show-trofeu {
+    opacity: 1;
+    transform: none;
+}
+
+.show-coluna[data-lugar="1"] .show-trofeu { width: 120px; height: 120px; color: #f5c84c; }
+.show-coluna[data-lugar="2"] .show-trofeu { color: #d6dde8; }
+.show-coluna[data-lugar="3"] .show-trofeu { color: #cd8a52; }
+
+.show-coluna[data-lugar="1"].revelado .show-trofeu {
+    animation: brilhoTaca 2.2s ease-in-out 2.7s infinite;
+}
+
+@keyframes brilhoTaca {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(245, 200, 76, 0.35)); }
+    50%      { filter: drop-shadow(0 0 28px rgba(245, 200, 76, 0.95)); }
 }
 
 .show-coluna.revelado .show-barra {
@@ -1696,8 +1724,10 @@ code {
 
 @media (prefers-reduced-motion: reduce) {
     .show-card,
-    .show-barra {
+    .show-barra,
+    .show-trofeu {
         transition: none;
+        animation: none !important;
     }
 }
 

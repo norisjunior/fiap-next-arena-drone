@@ -37,6 +37,13 @@
                 {% if top3|length >= lugar %}
                 {% set item = top3[lugar - 1] %}
                 <div class="show-coluna" data-lugar="{{ lugar }}" id="coluna{{ lugar }}">
+                    <svg class="show-trofeu" viewBox="0 0 64 64" aria-hidden="true">
+                        <path d="M18 12H9v4c0 7 4 11 10 11M46 12h9v4c0 7-4 11-10 11" fill="none" stroke="currentColor" stroke-width="4"/>
+                        <path d="M17 6h30v16c0 10-7 17-15 17S17 32 17 22z" fill="currentColor"/>
+                        <rect x="29" y="38" width="6" height="10" fill="currentColor"/>
+                        <rect x="19" y="48" width="26" height="8" rx="2" fill="currentColor"/>
+                        {% if lugar == 1 %}<path d="M32 12l2.4 5 5.4.6-4 3.7 1.1 5.3-4.9-2.7-4.9 2.7 1.1-5.3-4-3.7 5.4-.6z" fill="#fff8d6"/>{% endif %}
+                    </svg>
                     <article class="show-card">
                         <span class="show-lugar">
                             {% if lugar == 1 %}Campeão{% elif lugar == 2 %}Vice-campeão{% else %}Terceiro lugar{% endif %}
@@ -212,17 +219,26 @@
 
             const passo = SEQUENCIA[passoAtual];
             document.getElementById("coluna" + passo.lugar).classList.add("revelado");
-            if (passo.lugar === 1) soltarConfete();
-
-            showDica.textContent = passo.dica;
-            passoAtual += 1;
-
-            if (passoAtual < SEQUENCIA.length) {
-                btnRevelar.textContent = passo.proximo;
-            } else {
-                btnRevelar.textContent = "PÓDIO REVELADO";
-                btnRevelar.disabled = true;
+            // confete quando a taça pousa, em três rajadas
+            if (passo.lugar === 1) {
+                setTimeout(soltarConfete, 2400);
+                setTimeout(soltarConfete, 3300);
+                setTimeout(soltarConfete, 4200);
             }
+
+            passoAtual += 1;
+            btnRevelar.disabled = true;
+
+            // espera a animação terminar antes de liberar o próximo clique
+            setTimeout(function () {
+                showDica.textContent = passo.dica;
+                if (passoAtual < SEQUENCIA.length) {
+                    btnRevelar.textContent = passo.proximo;
+                    btnRevelar.disabled = false;
+                } else {
+                    btnRevelar.textContent = "PÓDIO REVELADO";
+                }
+            }, semAnimacao ? 0 : 2600);
         }
 
         btnRevelar.addEventListener("click", revelar);
