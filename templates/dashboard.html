@@ -31,6 +31,9 @@
     {% if top3 %}
     <section class="show-podio" id="showPodio">
         <canvas id="confete"></canvas>
+        <!-- palco escuro com um holofote que percorre as colunas antes do campeão -->
+        <div class="show-escuro" id="showEscuro"></div>
+        <p class="show-suspense" id="showSuspense">E o campeão é…</p>
 
         <div class="show-palco">
             {% for lugar in [2, 1, 3] %}
@@ -52,7 +55,7 @@
                         <span class="show-turma">{{ item.turma }}</span>
                         <div class="show-metricas">
                             <div>
-                                <span class="valor">{{ "%.1f"|format(item.pontuacao * 100) }}%</span>
+                                <span class="valor" data-alvo="{{ '%.1f'|format(item.pontuacao * 100) }}">{{ "%.1f"|format(item.pontuacao * 100) }}%</span>
                                 <span class="label">Pontuação</span>
                             </div>
                             <div>
@@ -171,21 +174,25 @@
         window.addEventListener("resize", ajustarCanvas);
         ajustarCanvas();
 
+        // uma rajada só, dourado e branco, saindo dos dois cantos de baixo
+        // como canhões de palco
         function soltarConfete() {
             if (semAnimacao) return;
-            const cores = ["#EF1957", "#41d6c3", "#20d071", "#f0b84a", "#f7f7fb"];
-            for (let i = 0; i < 140; i++) {
-                particulas.push({
-                    x: canvas.width / 2 + (Math.random() - 0.5) * canvas.width * 0.5,
-                    y: canvas.height * 0.45,
-                    vx: (Math.random() - 0.5) * 9,
-                    vy: Math.random() * -11 - 4,
-                    tamanho: Math.random() * 7 + 4,
-                    giro: Math.random() * Math.PI,
-                    velGiro: (Math.random() - 0.5) * 0.3,
-                    cor: cores[Math.floor(Math.random() * cores.length)]
-                });
-            }
+            const cores = ["#f5c84c", "#ffd76a", "#d8a03d", "#fff4cf", "#ffffff"];
+            [-1, 1].forEach(function (lado) {
+                for (let i = 0; i < 110; i++) {
+                    particulas.push({
+                        x: lado < 0 ? 0 : canvas.width,
+                        y: canvas.height,
+                        vx: -lado * (Math.random() * 7 + 4),
+                        vy: -(Math.random() * 9 + 13),
+                        tamanho: Math.random() * 7 + 4,
+                        giro: Math.random() * Math.PI,
+                        velGiro: (Math.random() - 0.5) * 0.3,
+                        cor: cores[Math.floor(Math.random() * cores.length)]
+                    });
+                }
+            });
             requestAnimationFrame(animarConfete);
         }
 
@@ -195,6 +202,7 @@
 
             particulas.forEach(function (p) {
                 p.vy += 0.32;
+                p.vx *= 0.99;  // freio do ar: abre como leque e cai devagar
                 p.x += p.vx;
                 p.y += p.vy;
                 p.giro += p.velGiro;
@@ -214,20 +222,99 @@
             }
         }
 
+        const podio = document.getElementById("showPodio");
+        const escuro = document.getElementById("showEscuro");
+        const suspense = document.getElementById("showSuspense");
+        const DURACAO_VARREDURA = 3600;  // holofote + "E o campeão é…"
+
+        // a pontuação começa zerada e sobe como placar quando o card aparece
+        if (!semAnimacao) {
+            document.querySelectorAll(".show-card .valor[data-alvo]").forEach(function (valor) {
+                valor.textContent = "0.0%";
+            });
+        }
+
+        function contarPontuacao(lugar, duracao) {
+            const valor = document.querySelector("#coluna" + lugar + " .valor[data-alvo]");
+            const alvo = Number(valor.dataset.alvo);
+            const inicio = performance.now();
+            function quadro(agora) {
+                const t = Math.min(1, (agora - inicio) / duracao);
+                const p = 1 - Math.pow(1 - t, 4);  // desacelera nos últimos números
+                valor.textContent = (alvo * p).toFixed(1) + "%";
+                if (t < 1) requestAnimationFrame(quadro);
+            }
+            requestAnimationFrame(quadro);
+        }
+
+        function centroDaColuna(lugar) {
+            const caixa = document.getElementById("coluna" + lugar).getBoundingClientRect();
+            const base = podio.getBoundingClientRect();
+            return { x: caixa.left - base.left + caixa.width / 2,
+                     y: caixa.top - base.top + caixa.height * 0.45 };
+        }
+
+        function moverFoco(ponto) {
+            escuro.style.setProperty("--x", ponto.x + "px");
+            escuro.style.setProperty("--y", ponto.y + "px");
+        }
+
+        // o foco entra pela esquerda, passa pelas colunas e desacelera até
+        // parar no campeão (centro)
+        function varrerAteCampeao(aoFim) {
+            const pontos = [{ x: -200, y: centroDaColuna(1).y }].concat(
+                [2, 3, 2, 1].filter(function (lugar) { return document.getElementById("coluna" + lugar); })
+                    .map(centroDaColuna));
+            const trechos = pontos.slice(1).map(function (ponto, i) {
+                return Math.hypot(ponto.x - pontos[i].x, ponto.y - pontos[i].y);
+            });
+            const total = trechos.reduce(function (soma, d) { return soma + d; }, 0);
+            const inicio = performance.now();
+
+            function quadro(agora) {
+                const t = Math.min(1, (agora - inicio) / DURACAO_VARREDURA);
+                let resta = (1 - Math.pow(1 - t, 2.2)) * total;
+                let i = 0;
+                while (i < trechos.length - 1 && resta > trechos[i]) { resta -= trechos[i]; i++; }
+                const f = trechos[i] ? Math.min(1, resta / trechos[i]) : 1;
+                moverFoco({ x: pontos[i].x + (pontos[i + 1].x - pontos[i].x) * f,
+                            y: pontos[i].y + (pontos[i + 1].y - pontos[i].y) * f });
+                if (t < 1) requestAnimationFrame(quadro); else aoFim();
+            }
+            moverFoco(pontos[0]);
+            requestAnimationFrame(quadro);
+        }
+
+        function mostrarColuna(passo) {
+            document.getElementById("coluna" + passo.lugar).classList.add("revelado");
+            if (semAnimacao) return;
+            // o card aparece 1 s depois da barra; o campeão conta mais devagar
+            setTimeout(function () { contarPontuacao(passo.lugar, passo.lugar === 1 ? 2600 : 1600); }, 1000);
+            if (passo.lugar === 1) {
+                setTimeout(soltarConfete, 2600);  // quando a taça pousa
+                escuro.classList.add("aberto");   // o foco abre sobre o campeão
+                setTimeout(function () { escuro.classList.remove("ativo", "aberto"); }, 3400);
+            }
+        }
+
         function revelar() {
             if (passoAtual >= SEQUENCIA.length) return;
 
             const passo = SEQUENCIA[passoAtual];
-            document.getElementById("coluna" + passo.lugar).classList.add("revelado");
-            // confete quando a taça pousa, em três rajadas
-            if (passo.lugar === 1) {
-                setTimeout(soltarConfete, 2400);
-                setTimeout(soltarConfete, 3300);
-                setTimeout(soltarConfete, 4200);
-            }
-
+            const suspenso = passo.lugar === 1 && !semAnimacao;
             passoAtual += 1;
             btnRevelar.disabled = true;
+
+            if (suspenso) {
+                escuro.classList.add("ativo");
+                suspense.classList.add("ativo");
+                varrerAteCampeao(function () {
+                    suspense.classList.remove("ativo");
+                    mostrarColuna(passo);
+                });
+            } else {
+                mostrarColuna(passo);
+            }
 
             // espera a animação terminar antes de liberar o próximo clique
             setTimeout(function () {
@@ -238,7 +325,7 @@
                 } else {
                     btnRevelar.textContent = "PÓDIO REVELADO";
                 }
-            }, semAnimacao ? 0 : 2600);
+            }, semAnimacao ? 0 : (suspenso ? DURACAO_VARREDURA : 0) + 2600);
         }
 
         btnRevelar.addEventListener("click", revelar);

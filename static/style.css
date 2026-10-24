@@ -1777,13 +1777,93 @@ code {
 .show-coluna[data-lugar="2"] .show-trofeu { color: #d6dde8; }
 .show-coluna[data-lugar="3"] .show-trofeu { color: #cd8a52; }
 
+/* Taça do campeão: um clarão quando pousa e depois um brilho parado */
 .show-coluna[data-lugar="1"].revelado .show-trofeu {
-    animation: brilhoTaca 2.2s ease-in-out 2.7s infinite;
+    animation: brilhoTaca 1.6s ease-out 2.7s 1 both;
 }
 
 @keyframes brilhoTaca {
-    0%, 100% { filter: drop-shadow(0 0 6px rgba(245, 200, 76, 0.35)); }
-    50%      { filter: drop-shadow(0 0 28px rgba(245, 200, 76, 0.95)); }
+    0%   { filter: drop-shadow(0 0 6px rgba(245, 200, 76, 0.35)); }
+    35%  { filter: drop-shadow(0 0 34px rgba(245, 200, 76, 1)); }
+    100% { filter: drop-shadow(0 0 14px rgba(245, 200, 76, 0.55)); }
+}
+
+/* Card do campeão: um reflexo atravessa uma única vez, como luz em metal */
+.show-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.show-coluna[data-lugar="1"] .show-card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -60%;
+    width: 40%;
+    background: linear-gradient(105deg, transparent, rgba(255, 244, 207, 0.35), transparent);
+    transform: skewX(-20deg);
+    pointer-events: none;
+}
+
+.show-coluna[data-lugar="1"].revelado .show-card::after {
+    animation: reflexo 1.3s ease-in-out 2.2s 1 both;
+}
+
+@keyframes reflexo {
+    from { left: -60%; }
+    to   { left: 130%; }
+}
+
+/* Holofote: o palco escurece e um foco percorre as colunas até o campeão */
+@property --raio {
+    syntax: "<length>";
+    inherits: false;
+    initial-value: 190px;
+}
+
+.show-escuro {
+    --x: -200px;
+    --y: 50%;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle var(--raio) at var(--x) var(--y),
+                rgba(255, 236, 190, 0.08) 0%, rgba(0, 0, 0, 0) 55%, rgba(4, 5, 9, 0.9) 100%);
+    transition: opacity 0.8s ease, --raio 0.9s ease;
+}
+
+.show-escuro.ativo {
+    opacity: 1;
+}
+
+.show-escuro.aberto {
+    --raio: 340px;
+}
+
+.show-suspense {
+    position: absolute;
+    top: 16%;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    margin: 0;
+    text-align: center;
+    font-size: 54px;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    color: #fff4cf;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+    pointer-events: none;
+}
+
+.show-suspense.ativo {
+    opacity: 1;
+    transform: none;
 }
 
 .show-coluna.revelado .show-barra {
@@ -1833,6 +1913,7 @@ code {
 
 #confete {
     position: absolute;
+    z-index: 5;
     inset: 0;
     width: 100%;
     height: 100%;
@@ -1841,8 +1922,11 @@ code {
 
 @media (prefers-reduced-motion: reduce) {
     .show-card,
+    .show-card::after,
     .show-barra,
-    .show-trofeu {
+    .show-trofeu,
+    .show-escuro,
+    .show-suspense {
         transition: none;
         animation: none !important;
     }
