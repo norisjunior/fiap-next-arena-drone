@@ -75,7 +75,8 @@ Copie a linha `ADMIN_PASSWORD_HASH='...'` que aparecer para o `.env`. Sem ela o 
 
 - O app escuta só em `127.0.0.1` (`APP_HOST` no `.env`): apenas o próprio notebook abre as telas. O telão abre no notebook e é espelhado no projetor; as câmeras não precisam acessar o app, é ele quem busca o `/capture`.
 - Upload de `best.pt` limitado a `MAX_UPLOAD_MB` (padrão 100 MB).
-- Antes de carregar um `best.pt`, o app lê o pickle interno **sem executá-lo** e recusa o arquivo se ele tentar usar algo fora de `torch`/`ultralytics`/tipos básicos (por exemplo `os.system`, `eval`, `exec`). O motivo aparece na tela e no console com o prefixo `[seguranca]`.
+- Antes de carregar um `best.pt`, o app passa por duas barreiras. Primeiro lê o pickle interno **sem executá-lo** e recusa o arquivo se ele tentar usar algo fora de `torch`/`ultralytics`/tipos básicos (por exemplo `os.system`, `eval`, `exec`). Depois abre o arquivo com `torch.load(weights_only=True)`, que só aceita as classes de `torch`/`ultralytics`: um arquivo que engane a primeira leitura cai aqui. O motivo aparece na tela e no console com o prefixo `[seguranca]`.
+- Só entra um YOLO de detecção treinado pelo grupo: o modelo precisa ser `DetectionModel` (YOLO-World e YOLOE são recusados, porque detectam qualquer classe por texto) e trazer os `train_args` de um `model.train()` com `task=detect`. Além disso, as classes precisam bater com a lista oficial e o modelo não pode ser o COCO padrão.
 
 ---
 

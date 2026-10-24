@@ -13,6 +13,7 @@ Senha do professor (uma vez): python app.py --senha  e copie a linha para o .env
 
 import os
 import hmac
+import importlib
 import json
 import pickletools
 import shutil
@@ -30,6 +31,8 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify, Response, session
 from werkzeug.security import check_password_hash, generate_password_hash
 from ultralytics import YOLO
+from ultralytics.nn.tasks import DetectionModel
+import torch
 import cv2
 import numpy as np
 from dotenv import load_dotenv
@@ -308,6 +311,54 @@ def verificar_pickle_modelo(caminho_modelo):
         print(f"[seguranca] best.pt recusado ({caminho_modelo}): {', '.join(suspeitos)}")
         raise ValueError("arquivo recusado por segurança: ele tenta usar "
                          + ", ".join(suspeitos[:5]))
+
+    # Segunda barreira: a leitura acima é heurística e pode ser enganada.
+    # O torch.load restrito só aceita as classes de torch/ultralytics da lista;
+    # qualquer outra coisa (os.system, eval...) derruba a leitura. Se passar,
+    # o YOLO() depois importa exatamente as mesmas classes.
+    with torch.serialization.safe_globals(classes_permitidas(importados)):
+        try:
+            checkpoint = torch.load(caminho_modelo, map_location="cpu", weights_only=True)
+        except Exception as erro:
+            print(f"[seguranca] torch.load restrito falhou ({caminho_modelo}): {erro}")
+            raise ValueError("arquivo recusado por segurança: ele não abre no modo restrito. "
+                             "Envie o best.pt gerado no treino do grupo")
+
+    verificar_yolo_treinado(checkpoint)
+
+
+def classes_permitidas(importados):
+    """Só classes (tipos) de torch/ultralytics entram na lista do torch.load."""
+    tipos = []
+    for modulo, nome in importados:
+        if modulo.split(".")[0] not in ("torch", "ultralytics"):
+            continue
+        try:
+            objeto = getattr(importlib.import_module(modulo), nome)
+        except Exception:
+            raise ValueError(f"o arquivo usa {modulo}.{nome}, que não existe nesta versão do Ultralytics")
+        if isinstance(objeto, type):
+            tipos.append(objeto)
+    return tipos
+
+
+def verificar_yolo_treinado(checkpoint):
+    """Aceita só um YOLO de detecção que saiu de um treino (model.train()).
+
+    A classe precisa ser exatamente DetectionModel: YOLO-World e YOLOE herdam
+    dela, mas detectam por texto qualquer classe, o que burlaria o desafio.
+    """
+    if not isinstance(checkpoint, dict):
+        raise ValueError("o arquivo não é um checkpoint do Ultralytics")
+    modelo = checkpoint.get("ema") or checkpoint.get("model")
+    if type(modelo) is not DetectionModel:
+        tipo = type(modelo).__name__ if modelo is not None else "nenhum"
+        raise ValueError(f"o arquivo não é um YOLO de detecção (modelo {tipo}). "
+                         "Envie o best.pt treinado com as imagens do grupo")
+    treino = checkpoint.get("train_args")
+    if not isinstance(treino, dict) or treino.get("task", "detect") != "detect":
+        raise ValueError("o arquivo não traz os dados do treino do grupo (train_args). "
+                         "Envie o best.pt que o model.train() gerou")
 
 
 def obter_modelo(caminho_modelo):
