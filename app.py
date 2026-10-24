@@ -581,6 +581,15 @@ def iniciar_banco():
                 status_revisao TEXT DEFAULT 'pendente'
             )
         """)
+        conexao.execute("""
+            CREATE TABLE IF NOT EXISTS sorteios (
+                grupo TEXT,
+                rodada INTEGER,
+                classe TEXT,
+                data_hora TEXT,
+                PRIMARY KEY (grupo, rodada, classe)
+            )
+        """)
         colunas = [
             linha["name"]
             for linha in conexao.execute("PRAGMA table_info(avaliacoes)").fetchall()
@@ -628,7 +637,7 @@ def limpar_competicao(escopo):
 
     with conectar_banco() as conexao:
         contagens = {}
-        for tabela in ("evidencias", "avaliacoes"):
+        for tabela in ("evidencias", "avaliacoes", "sorteios"):
             contagens[tabela] = conexao.execute(f"SELECT COUNT(*) FROM {tabela}").fetchone()[0]
             conexao.execute(f"DELETE FROM {tabela}")
         if escopo == "tudo":
@@ -856,19 +865,26 @@ def listar_evidencias_agrupadas():
 
     resultado = []
     for grupo in grupos.values():
+        sorteadas = classes_sorteadas(grupo["grupo"], grupo["rodada"])
+        grupo["sorteadas"] = sorted(sorteadas)
         classes = []
         for classe in grupo["classes"].values():
+            # classe reconhecida que não saiu no dado não pontua nem precisa de auditoria
+            classe["no_dado"] = classe["classe_detectada"] in sorteadas
             # rejeitadas vão para o fim: a próxima da fila sobe para ser validada
             classe["itens"].sort(key=lambda item: (item["status_revisao"] == "rejeitada", -item["confidence"]))
             classe["pendentes"] = sum(1 for item in classe["itens"] if item["status_revisao"] == "pendente")
             classe["validadas"] = sum(1 for item in classe["itens"] if item["status_revisao"] == "validada")
             classe["auditada"] = classe_auditada(classe["validadas"], classe["pendentes"])
             classes.append(classe)
-        classes.sort(key=lambda item: item["classe_detectada"])
+        classes.sort(key=lambda item: (not item["no_dado"], item["classe_detectada"]))
         grupo["classes"] = classes
-        # rodada auditada = todas as classes auditadas (o selo na tela usa isto)
-        grupo["classes_auditadas"] = sum(1 for classe in classes if classe["auditada"])
-        grupo["auditado"] = grupo["classes_auditadas"] == len(classes)
+        # rodada auditada = sorteio registrado e todas as classes do dado auditadas
+        # (o selo na tela usa isto)
+        do_dado = [classe for classe in classes if classe["no_dado"]]
+        grupo["classes_no_dado"] = len(do_dado)
+        grupo["classes_auditadas"] = sum(1 for classe in do_dado if classe["auditada"])
+        grupo["auditado"] = bool(sorteadas) and grupo["classes_auditadas"] == len(do_dado)
         resultado.append(grupo)
 
     resultado.sort(key=lambda item: (item["rodada"], item["data_hora"]), reverse=True)
@@ -907,11 +923,13 @@ def listar_melhores_evidencias_por_classe(grupo):
             ORDER BY classe_detectada, confidence DESC
         """, (grupo, ultima)).fetchall()
 
+    sorteadas = classes_sorteadas(grupo, ultima)
     melhores = {}
     for linha in linhas:
         item = dict(linha)
         classe = item["classe_detectada"]
-        melhores.setdefault(classe, item)
+        if classe in sorteadas:
+            melhores.setdefault(classe, item)
 
     return sorted(melhores.values(), key=lambda item: (-item["confidence"], item["classe_detectada"]))
 
@@ -934,6 +952,33 @@ def atualizar_status_evidencia(evidencia_id, status):
         )
 
     registrar_evento("revisao_evidencia", linha["grupo"], f"{linha['classe_detectada']} -> {status}")
+
+
+def classes_sorteadas(grupo, rodada):
+    """Classes que saíram no dado na rodada: só elas pontuam e entram na auditoria."""
+    with conectar_banco() as conexao:
+        linhas = conexao.execute(
+            "SELECT classe FROM sorteios WHERE grupo = ? AND rodada = ?",
+            (grupo, rodada)
+        ).fetchall()
+    return {linha["classe"] for linha in linhas}
+
+
+def marcar_sorteio(grupo, rodada, classe, saiu):
+    """Marca ou desmarca uma classe como sorteada no dado nesta rodada."""
+    with conectar_banco() as conexao:
+        if saiu:
+            conexao.execute("""
+                INSERT OR IGNORE INTO sorteios (grupo, rodada, classe, data_hora)
+                VALUES (?, ?, ?, ?)
+            """, (grupo, rodada, classe, datetime.now().isoformat()))
+        else:
+            conexao.execute(
+                "DELETE FROM sorteios WHERE grupo = ? AND rodada = ? AND classe = ?",
+                (grupo, rodada, classe)
+            )
+    registrar_evento("sorteio_dado", grupo,
+                     f"Rodada {rodada}: {classe} {'saiu no dado' if saiu else 'desmarcada'}")
 
 
 def normalizar_camera_url(url):
@@ -1284,8 +1329,12 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
     A pontuação é a média de CLASSES_MEDIDA posições: entram as melhores
     classes validadas e cada posição que faltar vale 0. Classe a mais serve
     de reserva e nunca baixa a nota.
+
+    Só contam as classes que saíram no dado: rodada sem sorteio registrado
+    fica sem pontuação até o professor marcar.
     """
     rodada = avaliacoes[0]["rodada"] if avaliacoes else None
+    sorteadas = classes_sorteadas(grupo, rodada) if rodada else set()
     deteccoes_por_classe = {
         item["classe_detectada"]: item.get("deteccoes") or 0
         for item in avaliacoes
@@ -1303,7 +1352,7 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
     contagem = {"validada": 0, "rejeitada": 0, "pendente": 0}
     por_classe = {}
     for linha in linhas:
-        if linha["classe_detectada"] not in classes_esperadas:
+        if linha["classe_detectada"] not in classes_esperadas or linha["classe_detectada"] not in sorteadas:
             continue
         status = linha["status_revisao"] or "pendente"
         classe = linha["classe_detectada"]
@@ -1323,6 +1372,7 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
             "classe": classe,
             "confidence": round(melhor_validada.get(classe, 0.0), 4),
             "pontuou": classe in melhor_validada,
+            "no_dado": classe in sorteadas,
             "deteccoes": deteccoes_por_classe.get(classe, 0)
         }
         for classe in classes_esperadas
@@ -1331,6 +1381,8 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
     # desafio com menos classes que a medida não pode exigir o impossível
     medida = min(CLASSES_MEDIDA, len(classes_esperadas)) or 1
     na_media = sorted(valores, reverse=True)[:medida]
+    # desempate por detecções também só considera o que saiu no dado
+    deteccoes_no_dado = sum(qtd for classe, qtd in deteccoes_por_classe.items() if classe in sorteadas)
 
     return {
         "rodada": rodada,
@@ -1340,7 +1392,8 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
         "classes_faltando": medida - len(na_media),
         "pontuacao": round(sum(na_media) / medida, 4),
         "tem_pontuacao": bool(valores),
-        "deteccoes_total": sum(deteccoes_por_classe.values()),
+        "sorteio_registrado": bool(sorteadas),
+        "deteccoes_total": deteccoes_no_dado,
         "evidencias_validadas": contagem["validada"],
         "evidencias_rejeitadas": contagem["rejeitada"],
         "evidencias_pendentes": pendentes_a_auditar
@@ -1352,7 +1405,8 @@ def calcular_ranking(dados):
 
     Ordem: maior pontuação (média das 5 melhores classes validadas), mais classes
     pontuadas, mais detecções no turno e menor tempo médio de inferência.
-    Grupo sem nenhuma evidência validada fica no fim, sem pontuação.
+    Grupo sem nenhuma evidência validada (ou sem sorteio registrado) fica no
+    fim, sem pontuação.
     """
     classes_esperadas = ler_classes_oficiais()
     ranking = []
@@ -1599,6 +1653,11 @@ def preparar_job_avaliacao(grupo, caminho_modelo, camera_url, duracao_s, rodada,
             "_thread_iniciada": False
         }
         TELAO_JOB_ATIVO_ID = job_id
+
+    # a rodada ainda não tem avaliação: se sobrou sorteio de uma sessão
+    # preparada e nunca iniciada, ele não pode valer para esta
+    with conectar_banco() as conexao:
+        conexao.execute("DELETE FROM sorteios WHERE grupo = ? AND rodada = ?", (grupo["grupo"], rodada))
 
     # o telão não pode mostrar o último frame do grupo anterior
     publicar_frame_telao(None)
@@ -1955,7 +2014,28 @@ def telao():
 @app.route("/telao/status")
 def status_telao():
     """Retorna a sessão atualmente selecionada para o telão."""
-    return jsonify(obter_job_ativo_publico())
+    estado = obter_job_ativo_publico()
+    # o painel do Turno usa isto para os checkboxes do dado; o telão ignora
+    if estado.get("grupo"):
+        estado["sorteadas"] = sorted(classes_sorteadas(estado["grupo"], estado["rodada"]))
+    return jsonify(estado)
+
+
+@app.route("/sorteio", methods=["POST"])
+def sorteio():
+    """Marca ou desmarca uma classe que saiu no dado (painel do Turno e auditoria)."""
+    dados = request.get_json(silent=True) or {}
+    grupo = str(dados.get("grupo", ""))
+    classe = str(dados.get("classe", ""))
+    try:
+        rodada = int(dados.get("rodada"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "erro": "Rodada inválida."}), 400
+    if not grupo or classe not in ler_classes_oficiais():
+        return jsonify({"ok": False, "erro": "Grupo ou classe inválidos."}), 400
+
+    marcar_sorteio(grupo, rodada, classe, bool(dados.get("saiu")))
+    return jsonify({"ok": True, "sorteadas": sorted(classes_sorteadas(grupo, rodada))})
 
 
 @app.route("/telao/stream")
@@ -2023,6 +2103,7 @@ def arena_admin():
         "arena_admin.html",
         job_ativo=obter_job_ativo_publico(),
         confidence_minima=CONFIDENCE_MINIMA,
+        classes_medida=CLASSES_MEDIDA,
         nome_dispositivo=NOME_DISPOSITIVO,
         usando_gpu=(DISPOSITIVO == "cuda")
     )
@@ -2084,7 +2165,9 @@ def ranking():
     return render_template("ranking.html",
                            ranking=tabela_rank,
                            classes_esperadas=ler_classes_oficiais(),
-                           pendentes_total=sum(item["evidencias_pendentes"] for item in tabela_rank))
+                           pendentes_total=sum(item["evidencias_pendentes"] for item in tabela_rank),
+                           sem_sorteio=[item["nome_exibir"] for item in tabela_rank
+                                        if not item["sorteio_registrado"]])
 
 
 @app.route("/criterios")
@@ -2127,7 +2210,8 @@ def auditoria():
                            historico=listar_historico(),
                            eventos=listar_eventos(),
                            evidencias=listar_evidencias_agrupadas(),
-                           meta_validadas=META_VALIDADAS_POR_CLASSE)
+                           meta_validadas=META_VALIDADAS_POR_CLASSE,
+                           classes_oficiais=ler_classes_oficiais())
 
 
 @app.route("/evidencia/<int:evidencia_id>/<status>", methods=["POST"])

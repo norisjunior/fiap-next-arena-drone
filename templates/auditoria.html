@@ -34,15 +34,22 @@
                     <summary>
                         <span>{{ grupo.nome_exibir }}</span>
                         <small>Rodada {{ grupo.rodada }} · {{ grupo.classes|length }} classes</small>
-                        <b class="selo-auditoria">{% if grupo.auditado %}✓ Auditado{% else %}{{ grupo.classes_auditadas }} de {{ grupo.classes|length }} classes auditadas{% endif %}</b>
+                        <b class="selo-auditoria">{% if not grupo.sorteadas %}Sorteio não registrado{% elif grupo.auditado %}✓ Auditado{% else %}{{ grupo.classes_auditadas }} de {{ grupo.classes_no_dado }} classes auditadas{% endif %}</b>
                     </summary>
+                    <div class="sorteio-dado" data-grupo="{{ grupo.grupo }}" data-rodada="{{ grupo.rodada }}">
+                        <strong>Saiu no dado:</strong>
+                        {% for classe in classes_oficiais %}
+                        <label><input type="checkbox" value="{{ classe }}" {{ 'checked' if classe in grupo.sorteadas else '' }}> {{ classe }}</label>
+                        {% endfor %}
+                    </div>
                     <div class="classes-do-grupo">
                         {% for classe in grupo.classes %}
-                        <details class="classe-evidencia {{ 'estado-auditado' if classe.auditada else 'estado-pendente' }}">
+                        <details class="classe-evidencia {{ '' if classe.no_dado else 'fora-do-dado' }} {{ 'estado-auditado' if classe.auditada else 'estado-pendente' }}"
+                                 data-classe="{{ classe.classe_detectada }}">
                             <summary>
                                 <span>{{ classe.classe_detectada }}</span>
                                 <small>{{ classe.itens|length }} imagens</small>
-                                <b class="selo-auditoria">{% if classe.auditada %}✓ Auditada{% else %}{{ classe.validadas }} de {{ meta_validadas }} validadas{% endif %}</b>
+                                <b class="selo-auditoria">{% if not classe.no_dado %}Não saiu no dado{% elif classe.auditada %}✓ Auditada{% else %}{{ classe.validadas }} de {{ meta_validadas }} validadas{% endif %}</b>
                             </summary>
                             <!-- as primeiras da fila aparecem com imagem; o resto, em lista.
                                  O JavaScript reordena a cada clique (rejeitada vai para o fim). -->
@@ -209,7 +216,13 @@
     function atualizarSelos() {
         let auditadas = 0;
         document.querySelectorAll(".grupo-auditoria").forEach(grupo => {
-            const classes = grupo.querySelectorAll(".classe-evidencia");
+            // classe que não saiu no dado fica fora da conta da auditoria
+            grupo.querySelectorAll(".classe-evidencia.fora-do-dado").forEach(classe => {
+                classe.classList.remove("estado-auditado", "estado-pendente");
+                classe.querySelector(":scope > summary .selo-auditoria").textContent = "Não saiu no dado";
+            });
+            const sorteioRegistrado = grupo.querySelector(".sorteio-dado input:checked") !== null;
+            const classes = grupo.querySelectorAll(".classe-evidencia:not(.fora-do-dado)");
             let classesAuditadas = 0;
             classes.forEach(classe => {
                 const pendentes = classe.querySelectorAll(".evidencia.pendente").length;
@@ -220,14 +233,32 @@
                 marcarSelo(classe, auditada,
                     auditada ? "✓ Auditada" : `${validadas} de ${META_VALIDADAS} validadas`);
             });
-            const auditado = classesAuditadas === classes.length;
+            const auditado = sorteioRegistrado && classesAuditadas === classes.length;
             if (auditado) auditadas++;
             marcarSelo(grupo, auditado,
-                auditado ? "✓ Auditado" : `${classesAuditadas} de ${classes.length} classes auditadas`);
+                !sorteioRegistrado ? "Sorteio não registrado"
+                    : auditado ? "✓ Auditado" : `${classesAuditadas} de ${classes.length} classes auditadas`);
         });
         const contador = document.getElementById("total-auditadas");
         if (contador) contador.textContent = auditadas;
     }
+
+    // Correção do sorteio depois do turno: grava e tira/põe a classe na conta.
+    document.querySelectorAll(".sorteio-dado").forEach(bloco => {
+        bloco.addEventListener("change", async event => {
+            const caixa = event.target;
+            await fetch("/sorteio", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ grupo: bloco.dataset.grupo, rodada: bloco.dataset.rodada,
+                                       classe: caixa.value, saiu: caixa.checked })
+            });
+            const classe = bloco.closest(".grupo-auditoria")
+                .querySelector(`.classe-evidencia[data-classe="${caixa.value}"]`);
+            if (classe) classe.classList.toggle("fora-do-dado", !caixa.checked);
+            atualizarSelos();
+        });
+    });
 
     document.querySelectorAll(".classe-evidencia").forEach(organizarClasse);
 </script>

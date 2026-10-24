@@ -135,7 +135,7 @@ Ao iniciar o software, o app abre a janela principal e a tela `/telao`. A tela d
 
 1. Em `/avaliar`, selecione o grupo, informe a URL `/capture` e clique em **Preparar sessão**.
 2. Em `/arena-admin` (Turno), clique em **START**. O cronômetro corre o tempo do desafio e o turno encerra sozinho.
-3. Durante o turno, todas as classes do desafio contam. O alvo de cada jogada é decidido fora do app, pelo dado.
+3. O alvo de cada jogada é decidido fora do app, pelo dado. Conforme o aluno joga, marque no painel do Turno, em **Saiu no dado**, cada classe que caiu. O telão continua mostrando tudo o que o modelo reconhece, mas só as classes marcadas pontuam e entram na auditoria. A marcação também pode ser corrigida depois, na Auditoria.
 
 Se a câmera cair, o tempo parado é devolvido ao grupo, até 30 segundos.
 
@@ -203,7 +203,7 @@ O ranking usa somente evidencias validadas. Evidencias pendentes e rejeitadas na
 
 No historico, `Conf.` e a confidence media da classe naquela rodada. `Min.` e `Max.` mostram a menor e a maior confidence detectada para a mesma classe.
 
-Cada classe do desafio vale a maior confidence validada dela. A pontuação é a média das 5 melhores classes validadas (`CLASSES_MEDIDA`): se o grupo validar menos de 5, cada classe que faltar entra com 0%, e classe a mais serve de reserva sem baixar a nota. Como não existe gabarito manual por frame, o ranking não calcula acurácia supervisionada. Ele ordena por:
+Cada classe do desafio vale a maior confidence validada dela. A pontuação é a média das 5 melhores classes validadas (`CLASSES_MEDIDA`): se o grupo validar menos de 5, cada classe que faltar entra com 0%, e classe a mais serve de reserva sem baixar a nota. Só contam as classes que saíram no dado: classe reconhecida fora do dado é ignorada, e rodada sem sorteio registrado fica sem pontuação. Como não existe gabarito manual por frame, o ranking não calcula acurácia supervisionada. Ele ordena por:
 
 1. maior pontuação;
 2. mais classes pontuadas;

@@ -48,6 +48,12 @@
             <div class="turno-classes" id="classesTurno"></div>
         </div>
 
+        <div id="blocoDado" hidden>
+            <span class="eyebrow">Saiu no dado · <span id="resumoDado">0 de 5</span></span>
+            <div class="sorteio-dado" id="sorteioDado"></div>
+            <small class="turno-nota">Só as classes marcadas pontuam e entram na auditoria. Sem nenhuma marcada, a rodada fica sem pontuação.</small>
+        </div>
+
         <div class="arena-links">
             <a class="botao secundario" href="/telao" target="next_telao">Abrir telão</a>
         </div>
@@ -126,7 +132,51 @@
                 <strong>${item.classe}</strong>
                 <span>${item.deteccoes} det. · ${item.deteccoes > 0 ? (item.melhor_conf * 100).toFixed(1) + "%" : "—"}</span>
             </div>`).join("");
+
+        desenharDado(estado);
     }
+
+    // Checkboxes do dado: montados uma vez por sessão (o painel redesenha os
+    // cartões a cada 500 ms, e um checkbox recriado perderia o clique).
+    const blocoDado = document.getElementById("blocoDado");
+    const sorteioDado = document.getElementById("sorteioDado");
+    const resumoDado = document.getElementById("resumoDado");
+    let sessaoDado = "";
+    const marcandoDado = {};  // clique ainda sem resposta do app: vale o que o professor marcou
+
+    function desenharDado(estado) {
+        blocoDado.hidden = !estado.grupo;
+        if (!estado.grupo) return;
+
+        const sessao = `${estado.grupo}|${estado.rodada}`;
+        if (sessao !== sessaoDado) {
+            sessaoDado = sessao;
+            sorteioDado.innerHTML = (estado.classes || []).map(item => `
+                <label><input type="checkbox" value="${item.classe}"> ${item.classe}</label>`).join("");
+        }
+
+        const sorteadas = new Set(estado.sorteadas || []);
+        sorteioDado.querySelectorAll("input").forEach(caixa => {
+            caixa.checked = caixa.value in marcandoDado ? marcandoDado[caixa.value] : sorteadas.has(caixa.value);
+        });
+        resumoDado.textContent = `${sorteioDado.querySelectorAll("input:checked").length} de {{ classes_medida }}`;
+    }
+
+    sorteioDado.addEventListener("change", async event => {
+        const caixa = event.target;
+        const [grupo, rodada] = sessaoDado.split("|");
+        marcandoDado[caixa.value] = caixa.checked;
+        try {
+            await fetch("/sorteio", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ grupo, rodada, classe: caixa.value, saiu: caixa.checked })
+            });
+        } finally {
+            delete marcandoDado[caixa.value];
+            sincronizar();
+        }
+    });
 
     btnStart.addEventListener("click", async () => {
         btnStart.disabled = true;

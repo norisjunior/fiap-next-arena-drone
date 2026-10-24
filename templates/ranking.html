@@ -28,6 +28,13 @@
     </div>
     {% endif %}
 
+    {% if sem_sorteio %}
+    <div class="alerta erro">
+        <strong>Sorteio do dado não registrado: {{ sem_sorteio|join(", ") }}.</strong>
+        Sem as classes do dado a rodada não pontua. Marque em <a href="/auditoria">Auditoria</a>.
+    </div>
+    {% endif %}
+
     {% if ranking %}
     <div class="card">
         <table class="grid-arena">
@@ -53,6 +60,8 @@
                     <td class="grid-numero">
                         {% if item.tem_pontuacao %}
                             {{ "%.1f"|format(item.pontuacao * 100) }}%
+                        {% elif not item.sorteio_registrado %}
+                            <span class="grid-neutro">sorteio não registrado</span>
                         {% else %}
                             <span class="grid-neutro">sem pontuação</span>
                         {% endif %}
@@ -66,10 +75,10 @@
                     <td class="grid-numero">{{ item.deteccoes_total }}</td>
                     <td class="grid-classes">
                         {% for classe in item.classes if classe.deteccoes or classe.pontuou %}
-                            <span class="grid-chip {{ 'ok' if classe.pontuou else 'zero' }}"
+                            <span class="grid-chip {{ 'ok' if classe.pontuou else ('fora-do-dado' if item.sorteio_registrado and not classe.no_dado else 'zero') }}"
                                   title="{{ classe.deteccoes }} detecções no turno">
                                 {{ classe.classe }}
-                                {% if classe.pontuou %}{{ "%.0f"|format(classe.confidence * 100) }}%{% else %}não validada{% endif %}
+                                {% if classe.pontuou %}{{ "%.0f"|format(classe.confidence * 100) }}%{% elif not item.sorteio_registrado %}sem sorteio{% elif not classe.no_dado %}fora do dado{% else %}não validada{% endif %}
                             </span>
                         {% else %}
                             <span class="grid-neutro">nenhuma</span>
@@ -98,6 +107,7 @@
         <ul class="lista-criterios">
             <li>Cada classe vale a maior confidence <strong>validada</strong> na auditoria.</li>
             <li>A <strong>pontuação</strong> é a média das <strong>5 melhores classes</strong> validadas. Se o grupo validar menos de 5, cada classe que faltar entra com 0%. Classe a mais serve de reserva e nunca baixa a nota.</li>
+            <li>Só contam as classes que <strong>saíram no dado</strong>, marcadas no Turno ou na Auditoria. Classe reconhecida fora do dado é ignorada, e rodada sem sorteio registrado não pontua.</li>
             <li><strong>Detecções</strong> é o total de frames, no turno, com uma classe do desafio acima do mínimo.</li>
             <li>Só entra a <strong>última rodada</strong> de cada grupo.</li>
         </ul>

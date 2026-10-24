@@ -1585,6 +1585,36 @@ code {
     color: var(--muted);
 }
 
+.grid-chip.fora-do-dado {
+    color: var(--muted);
+    border-style: dashed;
+    text-decoration: line-through;
+}
+
+/* Classes que saíram no dado (painel do Turno e auditoria) */
+.sorteio-dado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    margin: 10px 0;
+}
+
+.grupo-auditoria > .sorteio-dado {
+    padding: 0 18px;
+}
+
+.sorteio-dado label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.classe-evidencia.fora-do-dado {
+    opacity: 0.5;
+}
+
 /* Pódio do resultado final (revelação controlada pelo professor) */
 
 .show-podio {
