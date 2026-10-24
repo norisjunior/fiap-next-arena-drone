@@ -229,3 +229,6 @@ imagens_anotadas/*
 modelos_recebidos/*
 !modelos_recebidos/.gitkeep
 .env
+
+# trilha da premiação (direitos autorais): fica só no notebook do professor
+static/audio/

@@ -34,6 +34,8 @@
         <!-- palco escuro com um holofote que percorre as colunas antes do campeão -->
         <div class="show-escuro" id="showEscuro"></div>
         <p class="show-suspense" id="showSuspense">E o campeão é…</p>
+        <!-- trilha da premiação (fica só no notebook, fora do git); sem ela o pódio é revelado clique a clique -->
+        <audio id="trilhaPodio" src="{{ url_for('static', filename='audio/podio.webm') }}" preload="auto"></audio>
 
         <div class="show-palco">
             {% for lugar in [2, 1, 3] %}
@@ -261,7 +263,8 @@
 
         // o foco entra pela esquerda, passa pelas colunas e desacelera até
         // parar no campeão (centro)
-        function varrerAteCampeao(aoFim) {
+        function varrerAteCampeao(aoFim, duracao) {
+            duracao = duracao || DURACAO_VARREDURA;
             const pontos = [{ x: -200, y: centroDaColuna(1).y }].concat(
                 [2, 3, 2, 1].filter(function (lugar) { return document.getElementById("coluna" + lugar); })
                     .map(centroDaColuna));
@@ -272,7 +275,7 @@
             const inicio = performance.now();
 
             function quadro(agora) {
-                const t = Math.min(1, (agora - inicio) / DURACAO_VARREDURA);
+                const t = Math.min(1, (agora - inicio) / duracao);
                 let resta = (1 - Math.pow(1 - t, 2.2)) * total;
                 let i = 0;
                 while (i < trechos.length - 1 && resta > trechos[i]) { resta -= trechos[i]; i++; }
@@ -328,11 +331,85 @@
             }, semAnimacao ? 0 : (suspenso ? DURACAO_VARREDURA : 0) + 2600);
         }
 
-        btnRevelar.addEventListener("click", revelar);
+        // --- Premiação com a trilha: um clique e o pódio segue as batidas ---
+        // Tempos (s) das batidas na faixa static/audio/podio.webm.
+        const MARCAS_AUDIO = { 3: 3.75, 2: 7.75, rufar: 13.75, 1: 24.0 };
+        const ANTECEDENCIA_CARD = 1.0;  // o card aparece 1 s depois da barra: nome na batida
+        const trilha = document.getElementById("trilhaPodio");
+        let comTrilha = false;
+        let premiacao = "parada";  // parada -> tocando -> terminada
+
+        function trilhaPronta() {
+            if (comTrilha || passoAtual > 0) return;
+            comTrilha = true;
+            btnRevelar.textContent = "INICIAR PREMIAÇÃO";
+        }
+        trilha.addEventListener("canplaythrough", trilhaPronta);
+        if (trilha.readyState >= 4) trilhaPronta();
+
+        function iniciarPremiacao() {
+            premiacao = "tocando";
+            btnRevelar.disabled = true;
+            const agenda = [];
+            SEQUENCIA.forEach(function (passo) {
+                const quando = MARCAS_AUDIO[passo.lugar] - ANTECEDENCIA_CARD;
+                if (passo.lugar === 1 && !semAnimacao) {
+                    // o rufar escurece o palco e o holofote passeia até a batida
+                    agenda.push({ t: MARCAS_AUDIO.rufar, fazer: function () {
+                        escuro.classList.add("ativo");
+                        suspense.classList.add("ativo");
+                        varrerAteCampeao(function () {}, (quando - trilha.currentTime) * 1000);
+                    } });
+                }
+                agenda.push({ t: quando, fazer: function () {
+                    suspense.classList.remove("ativo");
+                    mostrarColuna(passo);
+                    setTimeout(function () { showDica.textContent = passo.dica; }, 1000);
+                } });
+            });
+            agenda.sort(function (a, b) { return a.t - b.t; });
+
+            trilha.currentTime = 0;
+            trilha.volume = 1;
+            trilha.play();
+            // segue o relógio da própria música: não sai do compasso se o navegador engasgar
+            (function acompanhar() {
+                while (agenda.length && trilha.currentTime >= agenda[0].t) agenda.shift().fazer();
+                if (agenda.length) {
+                    requestAnimationFrame(acompanhar);
+                } else {
+                    premiacao = "terminada";
+                    setTimeout(function () {
+                        btnRevelar.textContent = "ENCERRAR MÚSICA";
+                        btnRevelar.disabled = false;
+                    }, 2600);
+                }
+            })();
+        }
+
+        function encerrarMusica() {
+            btnRevelar.disabled = true;
+            btnRevelar.textContent = "PÓDIO REVELADO";
+            const inicio = performance.now();
+            (function baixar(agora) {
+                const t = Math.min(1, ((agora || inicio) - inicio) / 2000);
+                trilha.volume = 1 - t;
+                if (t < 1) requestAnimationFrame(baixar); else trilha.pause();
+            })();
+        }
+
+        function aoClicar() {
+            if (premiacao === "terminada") return encerrarMusica();
+            if (premiacao === "tocando") return;
+            if (comTrilha && passoAtual === 0) return iniciarPremiacao();
+            revelar();
+        }
+
+        btnRevelar.addEventListener("click", aoClicar);
         document.addEventListener("keydown", function (evento) {
             if (evento.code === "Space") {
                 evento.preventDefault();
-                revelar();
+                if (!btnRevelar.disabled) aoClicar();
             }
         });
     }
