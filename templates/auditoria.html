@@ -23,33 +23,39 @@
     <section class="card">
         <h2>Revisão visual por classe</h2>
         {% if evidencias %}
-            {% set auditadas = evidencias|selectattr("pendentes", "equalto", 0)|list|length %}
+            {% set auditadas = evidencias|selectattr("auditado")|list|length %}
             <p class="resumo-auditoria">
                 Rodadas auditadas: <strong id="total-auditadas">{{ auditadas }}</strong> de {{ evidencias|length }}
+                · meta: {{ meta_validadas }} imagens validadas por classe (ou nenhuma pendente)
             </p>
             <div class="lista-classes-auditoria">
                 {% for grupo in evidencias %}
-                <details class="grupo-evidencia grupo-auditoria {{ 'estado-auditado' if grupo.pendentes == 0 else 'estado-pendente' }}">
+                <details class="grupo-evidencia grupo-auditoria {{ 'estado-auditado' if grupo.auditado else 'estado-pendente' }}">
                     <summary>
                         <span>{{ grupo.nome_exibir }}</span>
                         <small>Rodada {{ grupo.rodada }} · {{ grupo.classes|length }} classes</small>
-                        <b class="selo-auditoria">{% if grupo.pendentes == 0 %}✓ Auditado{% else %}{{ grupo.pendentes }} de {{ grupo.total_itens }} pendentes{% endif %}</b>
+                        <b class="selo-auditoria">{% if grupo.auditado %}✓ Auditado{% else %}{{ grupo.classes_auditadas }} de {{ grupo.classes|length }} classes auditadas{% endif %}</b>
                     </summary>
                     <div class="classes-do-grupo">
                         {% for classe in grupo.classes %}
-                        <details class="classe-evidencia {{ 'estado-auditado' if classe.pendentes == 0 else 'estado-pendente' }}">
+                        <details class="classe-evidencia {{ 'estado-auditado' if classe.auditada else 'estado-pendente' }}">
                             <summary>
                                 <span>{{ classe.classe_detectada }}</span>
                                 <small>{{ classe.itens|length }} imagens</small>
-                                <b class="selo-auditoria">{% if classe.pendentes == 0 %}✓ Auditada{% else %}{{ classe.pendentes }} pendente{{ 's' if classe.pendentes > 1 else '' }}{% endif %}</b>
+                                <b class="selo-auditoria">{% if classe.auditada %}✓ Auditada{% else %}{{ classe.validadas }} de {{ meta_validadas }} validadas{% endif %}</b>
                             </summary>
-                            <div class="grade-evidencias">
+                            <!-- as primeiras da fila aparecem com imagem; o resto, em lista.
+                                 O JavaScript reordena a cada clique (rejeitada vai para o fim). -->
+                            <div class="grade-evidencias"></div>
+                            <div class="lista-evidencias">
                                 {% for item in classe.itens %}
-                                <article id="evidencia-{{ item.id }}" class="evidencia {{ item.status_revisao }}">
-                                    <img src="/imagens_anotadas/{{ item.imagem_anotada }}" alt="{{ item.classe_detectada }}">
+                                <article id="evidencia-{{ item.id }}" class="evidencia {{ item.status_revisao }}"
+                                         data-confidence="{{ item.confidence }}">
+                                    <img src="/imagens_anotadas/{{ item.imagem_anotada }}" alt="{{ item.classe_detectada }}" loading="lazy">
                                     <div class="evidencia-info">
                                         <strong>{{ "%.1f"|format(item.confidence * 100) }}%</strong>
                                         <span>Frame {{ item.frame_indice }}</span>
+                                        <a class="ver-imagem" href="/imagens_anotadas/{{ item.imagem_anotada }}" target="_blank">ver imagem</a>
                                         <span class="status">{{ item.status_revisao }}</span>
                                     </div>
                                     <div class="acoes-evidencia">
@@ -168,35 +174,62 @@
             card.classList.remove("validada", "rejeitada", "pendente");
             card.classList.add(dados.status);
             status.textContent = dados.status;
+            organizarClasse(card.closest(".classe-evidencia"));
             atualizarSelos();
         });
     });
 
-    // Recalcula os selos "Auditado" / "N pendentes" depois de cada clique,
+    const META_VALIDADAS = {{ meta_validadas }};
+
+    // Fila da classe: validadas e pendentes por confidence, rejeitadas no fim.
+    // As META_VALIDADAS primeiras ficam com imagem; o resto vai para a lista.
+    function organizarClasse(classe) {
+        const grade = classe.querySelector(".grade-evidencias");
+        const lista = classe.querySelector(".lista-evidencias");
+        const itens = [...classe.querySelectorAll(".evidencia")];
+        itens.sort((a, b) =>
+            a.classList.contains("rejeitada") - b.classList.contains("rejeitada")
+            || b.dataset.confidence - a.dataset.confidence);
+        itens.forEach((item, posicao) => {
+            const comImagem = posicao < META_VALIDADAS;
+            item.classList.toggle("compacta", !comImagem);
+            (comImagem ? grade : lista).appendChild(item);
+        });
+        lista.hidden = itens.length <= META_VALIDADAS;
+    }
+
+    // Recalcula os selos "Auditada" / "N de 3 validadas" depois de cada clique,
     // sem recarregar a página (e sem fechar o grupo aberto).
-    function marcarSelo(bloco, pendentes, texto) {
-        bloco.classList.toggle("estado-auditado", pendentes === 0);
-        bloco.classList.toggle("estado-pendente", pendentes > 0);
+    function marcarSelo(bloco, auditado, texto) {
+        bloco.classList.toggle("estado-auditado", auditado);
+        bloco.classList.toggle("estado-pendente", !auditado);
         bloco.querySelector(":scope > summary .selo-auditoria").textContent = texto;
     }
 
     function atualizarSelos() {
         let auditadas = 0;
         document.querySelectorAll(".grupo-auditoria").forEach(grupo => {
-            grupo.querySelectorAll(".classe-evidencia").forEach(classe => {
+            const classes = grupo.querySelectorAll(".classe-evidencia");
+            let classesAuditadas = 0;
+            classes.forEach(classe => {
                 const pendentes = classe.querySelectorAll(".evidencia.pendente").length;
-                marcarSelo(classe, pendentes,
-                    pendentes === 0 ? "✓ Auditada" : `${pendentes} pendente${pendentes > 1 ? "s" : ""}`);
+                const validadas = classe.querySelectorAll(".evidencia.validada").length;
+                // mesma regra do app.py (classe_auditada)
+                const auditada = validadas >= META_VALIDADAS || pendentes === 0;
+                if (auditada) classesAuditadas++;
+                marcarSelo(classe, auditada,
+                    auditada ? "✓ Auditada" : `${validadas} de ${META_VALIDADAS} validadas`);
             });
-            const total = grupo.querySelectorAll(".evidencia").length;
-            const pendentes = grupo.querySelectorAll(".evidencia.pendente").length;
-            if (pendentes === 0) auditadas++;
-            marcarSelo(grupo, pendentes,
-                pendentes === 0 ? "✓ Auditado" : `${pendentes} de ${total} pendentes`);
+            const auditado = classesAuditadas === classes.length;
+            if (auditado) auditadas++;
+            marcarSelo(grupo, auditado,
+                auditado ? "✓ Auditado" : `${classesAuditadas} de ${classes.length} classes auditadas`);
         });
         const contador = document.getElementById("total-auditadas");
         if (contador) contador.textContent = auditadas;
     }
+
+    document.querySelectorAll(".classe-evidencia").forEach(organizarClasse);
 </script>
 
 </body>

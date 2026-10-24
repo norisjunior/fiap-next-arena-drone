@@ -84,7 +84,10 @@
         <p>
             Durante a avaliação, o app guarda candidatas acima de {{ "%.0f"|format(confidence_minima * 100) }}% de confidence.
             Para reduzir imagens quase iguais, ele respeita um intervalo mínimo de {{ intervalo_evidencia }} segundos por classe.
-            Ao final, mantém até {{ top_predicoes }} melhores predições por classe para revisão visual.
+            Ao final, guarda todas as candidatas, da maior confidence para a menor. Na auditoria, as
+            {{ meta_validadas }} primeiras de cada classe aparecem com imagem e as demais em lista; uma imagem
+            rejeitada vai para o fim e a próxima sobe. A classe fica auditada com {{ meta_validadas }} validadas
+            (ou quando não sobra nenhuma pendente). A meta é só da auditoria: com uma única validada, a classe já pontua.
         </p>
     </section>
 </main>

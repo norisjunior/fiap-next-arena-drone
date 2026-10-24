@@ -45,7 +45,7 @@ CONFIDENCE_MINIMA = 0.50  # confiança mínima para a detecção contar
 CONFIDENCE_PREDICT = 0.25  # limiar do detector: mais baixo para o telão mostrar "quase lá"
 DURACAO_AVALIACAO_PADRAO = 120  # segundos do turno, usado até o desafio ser cadastrado
 INTERVALO_ENTRE_FRAMES = 0.05
-TOP_PREDICOES_POR_CLASSE = 5  # evidências guardadas por classe
+META_VALIDADAS_POR_CLASSE = 3  # meta da auditoria: classe com 3 validadas está auditada
 INTERVALO_EVIDENCIA_POR_CLASSE = 3.0  # evita salvar muitas imagens quase iguais
 SEGUNDOS_CAMERA_INSTAVEL = 1.5   # sem frame por mais que isso, avisa na tela
 MAX_EXTENSAO_TURNO_S = 30        # teto do tempo devolvido por queda de camera
@@ -807,6 +807,15 @@ def listar_eventos():
     return [dict(linha) for linha in linhas]
 
 
+def classe_auditada(validadas, pendentes):
+    """Classe auditada: bateu a meta de validadas ou não sobrou nada pendente.
+
+    A meta é só da auditoria: a pontuação usa a maior confidence validada,
+    mesmo que a classe tenha uma única imagem validada.
+    """
+    return validadas >= META_VALIDADAS_POR_CLASSE or pendentes == 0
+
+
 def listar_evidencias_agrupadas():
     """Lista as evidências visuais agrupadas por grupo, rodada e classe."""
     with conectar_banco() as conexao:
@@ -848,14 +857,17 @@ def listar_evidencias_agrupadas():
     for grupo in grupos.values():
         classes = []
         for classe in grupo["classes"].values():
-            classe["itens"].sort(key=lambda item: item["confidence"], reverse=True)
+            # rejeitadas vão para o fim: a próxima da fila sobe para ser validada
+            classe["itens"].sort(key=lambda item: (item["status_revisao"] == "rejeitada", -item["confidence"]))
             classe["pendentes"] = sum(1 for item in classe["itens"] if item["status_revisao"] == "pendente")
+            classe["validadas"] = sum(1 for item in classe["itens"] if item["status_revisao"] == "validada")
+            classe["auditada"] = classe_auditada(classe["validadas"], classe["pendentes"])
             classes.append(classe)
         classes.sort(key=lambda item: item["classe_detectada"])
         grupo["classes"] = classes
-        # rodada auditada = nenhuma imagem pendente (o selo na tela usa isto)
-        grupo["total_itens"] = sum(len(classe["itens"]) for classe in classes)
-        grupo["pendentes"] = sum(classe["pendentes"] for classe in classes)
+        # rodada auditada = todas as classes auditadas (o selo na tela usa isto)
+        grupo["classes_auditadas"] = sum(1 for classe in classes if classe["auditada"])
+        grupo["auditado"] = grupo["classes_auditadas"] == len(classes)
         resultado.append(grupo)
 
     resultado.sort(key=lambda item: (item["rodada"], item["data_hora"]), reverse=True)
@@ -990,20 +1002,25 @@ def guardar_candidato_evidencia(candidatos, chave, evidencia):
     candidatos[chave].append(evidencia)
 
 
-def salvar_top_evidencias(candidatos, pasta_anotadas):
-    """Salva no disco as melhores evidências de cada classe."""
+def salvar_evidencias(candidatos, pasta_anotadas):
+    """Salva no disco todas as candidatas de cada classe, da maior confidence para a menor.
+
+    A auditoria mostra as primeiras com imagem e as demais em lista: se o
+    professor rejeitar uma, a próxima da fila sobe para ser validada.
+    """
     evidencias = []
 
     for chave in sorted(candidatos):
         itens = candidatos[chave]
-        melhores = sorted(itens, key=lambda item: item["confidence"], reverse=True)[:TOP_PREDICOES_POR_CLASSE]
+        ordenados = sorted(itens, key=lambda item: item["confidence"], reverse=True)
 
-        for posicao, item in enumerate(melhores, start=1):
+        for posicao, item in enumerate(ordenados, start=1):
             nome_classe = normalizar_nome(item["classe_detectada"])
             conf_int = int(item["confidence"] * 1000)
             nome_arquivo = f"{nome_classe}_{posicao:02d}_{conf_int:04d}.jpg"
             caminho_absoluto = os.path.join(pasta_anotadas, nome_arquivo)
-            cv2.imwrite(caminho_absoluto, item["imagem"])
+            with open(caminho_absoluto, "wb") as arquivo:
+                arquivo.write(item["jpeg"])
 
             caminho_relativo = os.path.relpath(caminho_absoluto, PASTA_ANOTADAS).replace("\\", "/")
             evidencias.append({
@@ -1130,13 +1147,18 @@ def avaliar_camera(modelo, camera_url, duracao_s, pasta_anotadas, classes_espera
 
                     ultimo_candidato = ultimo_candidato_por_classe.get(nome_classe, 0)
                     if agora - ultimo_candidato >= INTERVALO_EVIDENCIA_POR_CLASSE:
+                        # guarda já em JPEG: todas as candidatas vão para a auditoria,
+                        # e o frame cru ocuparia ~1 MB de RAM cada até o fim do turno
+                        ok_jpeg, jpeg = cv2.imencode(".jpg", img_anotada)
+                        if not ok_jpeg:
+                            continue
                         guardar_candidato_evidencia(candidatos, nome_classe, {
                             "data_hora": datetime.now().isoformat(),
                             "classe_detectada": nome_classe,
                             "confidence": conf,
                             "tempo_ms": tempo_ms,
                             "frame_indice": frames_processados,
-                            "imagem": img_anotada.copy()
+                            "jpeg": jpeg.tobytes()
                         })
                         ultimo_candidato_por_classe[nome_classe] = agora
 
@@ -1157,7 +1179,7 @@ def avaliar_camera(modelo, camera_url, duracao_s, pasta_anotadas, classes_espera
 
     tempo_medio = sum(tempos) / len(tempos) if tempos else 0
     avaliacoes = []
-    evidencias = salvar_top_evidencias(candidatos, pasta_anotadas)
+    evidencias = salvar_evidencias(candidatos, pasta_anotadas)
     melhor_evidencia_por_classe = {}
     for evidencia in evidencias:
         classe = evidencia["classe_detectada"]
@@ -1277,14 +1299,22 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
 
     melhor_validada = {}
     contagem = {"validada": 0, "rejeitada": 0, "pendente": 0}
+    por_classe = {}
     for linha in linhas:
         if linha["classe_detectada"] not in classes_esperadas:
             continue
         status = linha["status_revisao"] or "pendente"
+        classe = linha["classe_detectada"]
         contagem[status] = contagem.get(status, 0) + 1
+        por_classe.setdefault(classe, {"validada": 0, "pendente": 0, "rejeitada": 0})[status] += 1
         if status == "validada":
-            classe = linha["classe_detectada"]
             melhor_validada[classe] = max(melhor_validada.get(classe, 0.0), linha["confidence"])
+
+    # o aviso de pendentes só conta classes que ainda não bateram a meta da auditoria
+    pendentes_a_auditar = sum(
+        item["pendente"] for item in por_classe.values()
+        if not classe_auditada(item["validada"], item["pendente"])
+    )
 
     classes = [
         {
@@ -1306,7 +1336,7 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
         "deteccoes_total": sum(deteccoes_por_classe.values()),
         "evidencias_validadas": contagem["validada"],
         "evidencias_rejeitadas": contagem["rejeitada"],
-        "evidencias_pendentes": contagem["pendente"]
+        "evidencias_pendentes": pendentes_a_auditar
     }
 
 
@@ -2056,7 +2086,7 @@ def criterios():
     return render_template(
         "criterios.html",
         confidence_minima=CONFIDENCE_MINIMA,
-        top_predicoes=TOP_PREDICOES_POR_CLASSE,
+        meta_validadas=META_VALIDADAS_POR_CLASSE,
         intervalo_evidencia=INTERVALO_EVIDENCIA_POR_CLASSE
     )
 
@@ -2088,7 +2118,8 @@ def auditoria():
     return render_template("auditoria.html",
                            historico=listar_historico(),
                            eventos=listar_eventos(),
-                           evidencias=listar_evidencias_agrupadas())
+                           evidencias=listar_evidencias_agrupadas(),
+                           meta_validadas=META_VALIDADAS_POR_CLASSE)
 
 
 @app.route("/evidencia/<int:evidencia_id>/<status>", methods=["POST"])

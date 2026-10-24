@@ -2,9 +2,9 @@
 
 Aplicação Flask simples para avaliar os modelos dos grupos, mostrar a inferencia ao vivo no telao, salvar evidencias visuais e gerar o ranking.
 
-O app consome imagens do ESP32-CAM pelo endpoint `/capture`. Para cada grupo, ele guarda as 10 melhores predicoes por classe para revisao visual do professor.
+O app consome imagens do ESP32-CAM pelo endpoint `/capture`. Para cada grupo, ele guarda as predicoes de cada classe para revisao visual do professor.
 
-Para evitar imagens quase identicas, o app salva candidatos de evidencia com intervalo minimo por classe. Depois, ordena por confidence e mantem as 10 melhores.
+Para evitar imagens quase identicas, o app salva candidatos de evidencia com intervalo minimo por classe (uma a cada 3 s). Depois, ordena por confidence e guarda todas.
 
 ---
 
@@ -180,7 +180,7 @@ No início do `app.py`:
 CONFIDENCE_MINIMA = 0.50   # confiança mínima para registrar deteccao
 DURACAO_AVALIACAO_PADRAO = 120
 INTERVALO_ENTRE_FRAMES = 0.05
-TOP_PREDICOES_POR_CLASSE = 5
+META_VALIDADAS_POR_CLASSE = 3
 INTERVALO_EVIDENCIA_POR_CLASSE = 3.0
 ```
 
@@ -195,6 +195,8 @@ Os cadastros, uploads, URLs usadas, objetos detectados, confidence média e temp
 O ranking usa a última rodada de avaliação de cada grupo. As rodadas anteriores não são apagadas e podem ser consultadas na página `/auditoria`.
 
 A auditoria visual agrupa as evidencias por grupo e depois por classe. Abra o grupo, clique no nome da classe e marque cada imagem como validada, rejeitada ou pendente.
+
+Em cada classe, as 3 imagens de maior confidence aparecem com foto e as demais em lista (com o link "ver imagem"). Ao rejeitar uma, ela vai para o fim e a próxima da fila sobe. A classe fica auditada com 3 validadas, ou quando não sobra nenhuma pendente. A meta de 3 é só da auditoria: uma classe com uma única validada já pontua.
 
 O ranking usa somente evidencias validadas. Evidencias pendentes e rejeitadas nao entram no calculo. Se um grupo ainda nao tem nenhuma evidencia validada, ele fica sem pontuacao final.
 
