@@ -181,6 +181,7 @@ CONFIDENCE_MINIMA = 0.50   # confiança mínima para registrar deteccao
 DURACAO_AVALIACAO_PADRAO = 120
 INTERVALO_ENTRE_FRAMES = 0.05
 META_VALIDADAS_POR_CLASSE = 3
+CLASSES_MEDIDA = 5
 INTERVALO_EVIDENCIA_POR_CLASSE = 3.0
 ```
 
@@ -202,7 +203,7 @@ O ranking usa somente evidencias validadas. Evidencias pendentes e rejeitadas na
 
 No historico, `Conf.` e a confidence media da classe naquela rodada. `Min.` e `Max.` mostram a menor e a maior confidence detectada para a mesma classe.
 
-Cada classe do desafio vale a maior confidence validada dela. A pontuação é a média só das classes que o grupo detectou: classe que não saiu no dado não pune o grupo. Como não existe gabarito manual por frame, o ranking não calcula acurácia supervisionada. Ele ordena por:
+Cada classe do desafio vale a maior confidence validada dela. A pontuação é a média das 5 melhores classes validadas (`CLASSES_MEDIDA`): se o grupo validar menos de 5, cada classe que faltar entra com 0%, e classe a mais serve de reserva sem baixar a nota. Como não existe gabarito manual por frame, o ranking não calcula acurácia supervisionada. Ele ordena por:
 
 1. maior pontuação;
 2. mais classes pontuadas;

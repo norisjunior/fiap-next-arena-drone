@@ -58,7 +58,10 @@
                         {% endif %}
                     </td>
                     <td class="grid-numero">
-                        {{ item.classes_pontuadas }}<span class="grid-de">/{{ classes_esperadas|length }}</span>
+                        {{ [item.classes_pontuadas, item.classes_medida]|min }}<span class="grid-de">/{{ item.classes_medida }}</span>
+                        {% if item.classes_pontuadas > item.classes_medida %}
+                            <span class="grid-de" title="Classes validadas além das {{ item.classes_medida }} da medida: reserva, não entram na média">+{{ item.classes_pontuadas - item.classes_medida }}</span>
+                        {% endif %}
                     </td>
                     <td class="grid-numero">{{ item.deteccoes_total }}</td>
                     <td class="grid-classes">
@@ -71,6 +74,11 @@
                         {% else %}
                             <span class="grid-neutro">nenhuma</span>
                         {% endfor %}
+                        {% if item.tem_pontuacao and item.classes_faltando %}
+                            <span class="grid-chip zero" title="Cada classe que faltar para chegar a {{ item.classes_medida }} entra com 0% na média">
+                                faltou {{ item.classes_faltando }} classe{{ 's' if item.classes_faltando > 1 else '' }} · 0%
+                            </span>
+                        {% endif %}
                     </td>
                     <td class="grid-numero">{{ item.evidencias_pendentes or "—" }}</td>
                     <td class="grid-numero">{{ item.tempo_medio_ms }} ms</td>
@@ -89,7 +97,7 @@
         <h2>Como o resultado é calculado</h2>
         <ul class="lista-criterios">
             <li>Cada classe vale a maior confidence <strong>validada</strong> na auditoria.</li>
-            <li>A <strong>pontuação</strong> é a média só das classes que o grupo detectou. Classe que não saiu no dado não entra na conta.</li>
+            <li>A <strong>pontuação</strong> é a média das <strong>5 melhores classes</strong> validadas. Se o grupo validar menos de 5, cada classe que faltar entra com 0%. Classe a mais serve de reserva e nunca baixa a nota.</li>
             <li><strong>Detecções</strong> é o total de frames, no turno, com uma classe do desafio acima do mínimo.</li>
             <li>Só entra a <strong>última rodada</strong> de cada grupo.</li>
         </ul>

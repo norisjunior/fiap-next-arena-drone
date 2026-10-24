@@ -46,6 +46,7 @@ CONFIDENCE_PREDICT = 0.25  # limiar do detector: mais baixo para o telão mostra
 DURACAO_AVALIACAO_PADRAO = 120  # segundos do turno, usado até o desafio ser cadastrado
 INTERVALO_ENTRE_FRAMES = 0.05
 META_VALIDADAS_POR_CLASSE = 3  # meta da auditoria: classe com 3 validadas está auditada
+CLASSES_MEDIDA = 5  # a pontuação é a média das 5 melhores classes; classe que faltar vale 0
 INTERVALO_EVIDENCIA_POR_CLASSE = 3.0  # evita salvar muitas imagens quase iguais
 SEGUNDOS_CAMERA_INSTAVEL = 1.5   # sem frame por mais que isso, avisa na tela
 MAX_EXTENSAO_TURNO_S = 30        # teto do tempo devolvido por queda de camera
@@ -1280,8 +1281,9 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
     """Resultado de um grupo na última rodada dele.
 
     Cada classe esperada vale a maior confidence VALIDADA na auditoria.
-    A pontuação é a média só das classes que o grupo conseguiu mostrar:
-    classe que não saiu no dado não pune ninguém.
+    A pontuação é a média de CLASSES_MEDIDA posições: entram as melhores
+    classes validadas e cada posição que faltar vale 0. Classe a mais serve
+    de reserva e nunca baixa a nota.
     """
     rodada = avaliacoes[0]["rodada"] if avaliacoes else None
     deteccoes_por_classe = {
@@ -1326,12 +1328,17 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
         for classe in classes_esperadas
     ]
     valores = list(melhor_validada.values())
+    # desafio com menos classes que a medida não pode exigir o impossível
+    medida = min(CLASSES_MEDIDA, len(classes_esperadas)) or 1
+    na_media = sorted(valores, reverse=True)[:medida]
 
     return {
         "rodada": rodada,
         "classes": classes,
         "classes_pontuadas": len(valores),
-        "pontuacao": round(sum(valores) / len(valores), 4) if valores else 0.0,
+        "classes_medida": medida,
+        "classes_faltando": medida - len(na_media),
+        "pontuacao": round(sum(na_media) / medida, 4),
         "tem_pontuacao": bool(valores),
         "deteccoes_total": sum(deteccoes_por_classe.values()),
         "evidencias_validadas": contagem["validada"],
@@ -1343,7 +1350,7 @@ def resultado_do_grupo(grupo, avaliacoes, classes_esperadas):
 def calcular_ranking(dados):
     """Classificação dos grupos avaliados.
 
-    Ordem: maior pontuação (média das classes validadas), mais classes
+    Ordem: maior pontuação (média das 5 melhores classes validadas), mais classes
     pontuadas, mais detecções no turno e menor tempo médio de inferência.
     Grupo sem nenhuma evidência validada fica no fim, sem pontuação.
     """
@@ -2087,6 +2094,7 @@ def criterios():
         "criterios.html",
         confidence_minima=CONFIDENCE_MINIMA,
         meta_validadas=META_VALIDADAS_POR_CLASSE,
+        classes_medida=CLASSES_MEDIDA,
         intervalo_evidencia=INTERVALO_EVIDENCIA_POR_CLASSE
     )
 
