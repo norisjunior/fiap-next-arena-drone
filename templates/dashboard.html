@@ -154,11 +154,11 @@
         const contexto = canvas.getContext("2d");
         const semAnimacao = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-        // ordem pedida na reuniao: terceiro, campeao e so entao o vice
+        // terceiro, vice e o campeão por último
         const SEQUENCIA = [
-            { lugar: 3, proximo: "REVELAR O CAMPEÃO",      dica: "Terceiro lugar no pódio!" },
-            { lugar: 1, proximo: "REVELAR O VICE-CAMPEÃO", dica: "Temos campeão!" },
-            { lugar: 2, proximo: "",                       dica: "Pódio completo. Parabéns a todos!" }
+            { lugar: 3, proximo: "REVELAR O VICE-CAMPEÃO", dica: "Terceiro lugar no pódio!" },
+            { lugar: 2, proximo: "REVELAR O CAMPEÃO",      dica: "Vice-campeão no pódio!" },
+            { lugar: 1, proximo: "",                       dica: "Temos campeão! Parabéns a todos!" }
         ].filter(passo => document.getElementById("coluna" + passo.lugar));
 
         let passoAtual = 0;
