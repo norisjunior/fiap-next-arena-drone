@@ -1,0 +1,11 @@
+# Só CPU: use se o requirements.txt (com CUDA) der erro, por exemplo no Mac.
+#   python -m pip install -r requirements-cpu.txt
+flask==3.1.3
+ultralytics==8.4.56
+torch==2.13.0
+torchvision==0.28.0
+opencv-python==4.13.0.92
+pandas==2.3.3
+pillow==12.2.0
+numpy==2.2.6
+python-dotenv==1.2.4

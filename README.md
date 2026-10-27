@@ -58,6 +58,17 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
+O `requirements.txt` instala o PyTorch com CUDA, para a inferência rodar na placa NVIDIA (testado na GTX 1650). Confira se a placa foi reconhecida:
+```
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+```
+Deve aparecer `True` e o nome da placa. Sem placa NVIDIA aparece `False CPU`, e o app roda na CPU normalmente; o painel do Turno mostra em qual dispositivo a inferência está rodando.
+
+Se a instalação der erro (por exemplo no Mac, onde não existe o PyTorch com CUDA), use a versão só CPU:
+```
+python -m pip install -r requirements-cpu.txt
+```
+
 Crie o `.env` a partir do exemplo e gere a chave das sessões do Flask (o `.env` não vai para o git):
 ```
 Copy-Item .env.example .env
@@ -148,7 +159,8 @@ Depois da avaliação, acesse `/auditoria` para revisar as melhores predicoes po
 ```
 app-avaliacao/
 ├── app.py                  ← código principal
-├── requirements.txt
+├── requirements.txt        ← padrão, com CUDA (placa NVIDIA)
+├── requirements-cpu.txt    ← só CPU, se o padrão der erro
 ├── templates/              ← páginas HTML
 │   ├── desafio.html
 │   ├── index.html

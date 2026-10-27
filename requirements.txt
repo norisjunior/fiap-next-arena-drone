@@ -1,7 +1,7 @@
-flask==3.1.3
-ultralytics==8.4.56
-opencv-python==4.13.0.92
-pandas==2.3.3
-pillow==12.2.0
-numpy==2.2.6
-python-dotenv==1.2.4
+# Padrão: PyTorch com CUDA 12.6, para a inferência rodar na placa NVIDIA
+# (testado na GTX 1650). Sem placa, o app cai sozinho para a CPU.
+# Se a instalação der erro (por exemplo no Mac), use o requirements-cpu.txt.
+-r requirements-cpu.txt
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.13.0+cu126
+torchvision==0.28.0+cu126
