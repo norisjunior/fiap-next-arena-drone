@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 # CONFIGURAÇÕES
 # =========================
 
-CONFIDENCE_MINIMA = 0.50  # confiança mínima para a detecção contar
+CONFIDENCE_MINIMA = 0.25  # confiança mínima para a detecção contar
 CONFIDENCE_PREDICT = 0.25  # limiar do detector: mais baixo para o telão mostrar "quase lá"
 DURACAO_AVALIACAO_PADRAO = 120  # segundos do turno, usado até o desafio ser cadastrado
 INTERVALO_ENTRE_FRAMES = 0.05
@@ -85,7 +85,7 @@ APP_HOST = os.environ.get("APP_HOST", "127.0.0.1")
 APP_PORT = 5000
 
 # Teto do upload de best.pt (um YOLO nano tem ~5 MB; sobra para modelos maiores).
-app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "150")) * 1024 * 1024
 
 # Cookie de sessão fora do alcance de JavaScript e de outros sites.
 # A sessão dura um dia de evento inteiro, para não deslogar no meio de um turno.
